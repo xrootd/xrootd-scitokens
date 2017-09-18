@@ -19,11 +19,11 @@ SET( CMAKE_MODULE_LINKER_FLAGS "-Wl,--no-undefined")
 include_directories(${PYTHON_INCLUDE_DIRS} ${BOOST_INCLUDE_DIRS} ${XROOTD_INCLUDES})
 add_library(_scitokens_xrootd SHARED src/scitokens_xrootd_module.cpp)
 target_link_libraries(_scitokens_xrootd ${Boost_PYTHON_LIBRARY} ${PYTHON_LIBRARIES})
-set_target_properties(_scitokens_xrootd PROPERTIES PREFIX "" OUTPUT_NAME _scitokens_xrootd SUFFIX ".so")
+set_target_properties(_scitokens_xrootd PROPERTIES PREFIX "" OUTPUT_NAME _scitokens_xrootd SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-module-symbols")
 
 add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
-target_link_libraries(XrdAccSciTokens ${Boost_PYTHON_LIBRARY} ${PYTHON_LIBRARIES})
-set_target_properties(XrdAccSciTokens PROPERTIES SUFFIX ".so")
+target_link_libraries(XrdAccSciTokens -ldl ${Boost_PYTHON_LIBRARY} ${PYTHON_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
+set_target_properties(XrdAccSciTokens PROPERTIES SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 
@@ -34,3 +34,7 @@ install(
 install(
   TARGETS XrdAccSciTokens
   LIBRARY DESTINATION ${LIB_INSTALL_DIR})
+
+install(
+  FILES ${CMAKE_SOURCE_DIR}/src/scitokens_xrootd.py
+  DESTINATION ${LIB_INSTALL_DIR}/python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}/site-packages/ )
