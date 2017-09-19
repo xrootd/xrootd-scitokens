@@ -101,8 +101,9 @@ static XrdAccPrivs AddPriv(Access_Operation op, XrdAccPrivs privs)
 class XrdAccRules
 {
 public:
-    XrdAccRules(uint64_t expiry_time) :
-        m_expiry_time(expiry_time)
+    XrdAccRules(uint64_t expiry_time, const std::string &username) :
+        m_expiry_time(expiry_time),
+        m_username(username)
     {}
 
     ~XrdAccRules() {}
@@ -129,9 +130,12 @@ public:
         }
     }
 
+    const std::string & get_username() const {return m_username;}
+
 private:
     std::vector<std::pair<Access_Operation, std::string>> m_rules;
     uint64_t m_expiry_time{0};
+    const std::string m_username;
 };
 
 class XrdAccSciTokens : public XrdAccAuthorize
@@ -145,10 +149,13 @@ public:
     {
         m_log.Say("++++++ XrdAccSciTokens: Initialized SciTokens-based authorization.");
         if (parms) {
+            m_log.Say("Initializing python module with params ", parms);
             m_module.attr("init")(parms);
         } else {
+            m_log.Say("Initializing python module with no configuration parameters");
             m_module.attr("init")();
         }
+        m_log.Say("Finished python module initialization.");
     }
 
     virtual ~XrdAccSciTokens() {}
@@ -177,11 +184,9 @@ public:
                 boost::python::object retval = m_module.attr("generate_acls")(authz);
                 boost::python::list cache = boost::python::list(retval[1]);
                 std::string username = boost::python::extract<std::string>(retval[2]);
-                if (!username.empty()) {
-                    const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
-                }
+                //m_log.Emsg("Access", "SciTokens library returned suggested username", username.c_str());
                 uint64_t cache_expiry = boost::python::extract<uint64_t>(retval[0]);
-                access_rules.reset(new XrdAccRules(now + cache_expiry));
+                access_rules.reset(new XrdAccRules(now + cache_expiry, username));
                 access_rules->parse(cache);
             } catch (boost::python::error_already_set) {
                 m_log.Emsg("Access", "Error generating ACLs for authorization", handle_pyerror().c_str());
@@ -191,6 +196,10 @@ public:
                 std::lock_guard<std::mutex> guard(m_mutex);
                 m_map[authz] = access_rules;
             }
+        }
+        const std::string &username = access_rules->get_username();
+        if (!username.empty() && !Entity->name) {
+            const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
         }
         XrdAccPrivs result = access_rules->apply(oper, path);
         return ((result == XrdAccPriv_None) && m_chain) ? m_chain->Access(Entity, path, oper, env) : result;
