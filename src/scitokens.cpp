@@ -137,13 +137,18 @@ private:
 class XrdAccSciTokens : public XrdAccAuthorize
 {
 public:
-    XrdAccSciTokens(XrdSysLogger *lp, std::unique_ptr<XrdAccAuthorize> chain) :
+    XrdAccSciTokens(XrdSysLogger *lp, const char *parms, std::unique_ptr<XrdAccAuthorize> chain) :
         m_module(boost::python::import("scitokens_xrootd")),
         m_chain(std::move(chain)),
         m_next_clean(monotonic_time() + m_expiry_secs),
         m_log(lp, "scitokens_")
     {
         m_log.Say("++++++ XrdAccSciTokens: Initialized SciTokens-based authorization.");
+        if (parms) {
+            m_module.attr("init")(parms);
+        } else {
+            m_module.attr("init")();
+        }
     }
 
     virtual ~XrdAccSciTokens() {}
@@ -155,10 +160,7 @@ public:
     {
         const char *authz = env->Get("authz");
         if (authz == nullptr) {
-            if (m_chain) {
-                return m_chain->Access(Entity, path, oper, env);
-            }
-            return XrdAccPriv_None;
+            return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
         }
         std::shared_ptr<XrdAccRules> access_rules;
         uint64_t now = monotonic_time();
@@ -183,14 +185,15 @@ public:
                 access_rules->parse(cache);
             } catch (boost::python::error_already_set) {
                 m_log.Emsg("Access", "Error generating ACLs for authorization", handle_pyerror().c_str());
-                return XrdAccPriv_None;
+                return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
             }
             {
                 std::lock_guard<std::mutex> guard(m_mutex);
                 m_map[authz] = access_rules;
             }
         }
-        return access_rules->apply(oper, path);
+        XrdAccPrivs result = access_rules->apply(oper, path);
+        return ((result == XrdAccPriv_None) && m_chain) ? m_chain->Access(Entity, path, oper, env) : result;
     }
 
     virtual int Audit(const int              accok,
@@ -261,7 +264,7 @@ XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
     std::unique_ptr<XrdAccAuthorize> def_authz(XrdAccDefaultAuthorizeObject(lp, cfn, parm, compiledVer));
     XrdAccSciTokens *authz{nullptr};
     try {
-        authz = new XrdAccSciTokens(lp, std::move(def_authz));
+        authz = new XrdAccSciTokens(lp, parm, std::move(def_authz));
     } catch (boost::python::error_already_set) {
         XrdSysError eDest(lp, "scitokens_");
         eDest.Emsg("XrdAccSciTokens", "Python failure initializing module:", handle_pyerror().c_str());
