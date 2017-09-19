@@ -23,7 +23,7 @@ set_target_properties(_scitokens_xrootd PROPERTIES PREFIX "" OUTPUT_NAME _scitok
 
 add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
 target_link_libraries(XrdAccSciTokens -ldl ${Boost_PYTHON_LIBRARY} ${PYTHON_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
-set_target_properties(XrdAccSciTokens PROPERTIES SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
+set_target_properties(XrdAccSciTokens PROPERTIES OUTPUT_NAME XrdAccSciTokens-4 SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 

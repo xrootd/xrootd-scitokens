@@ -1,6 +1,7 @@
 
 #include "XrdAcc/XrdAccAuthorize.hh"
 #include "XrdOuc/XrdOucEnv.hh"
+#include "XrdSec/XrdSecEntity.hh"
 #include "XrdSys/XrdSysLogger.hh"
 #include "XrdVersion.hh"
 
@@ -173,6 +174,10 @@ public:
             try {
                 boost::python::object retval = m_module.attr("generate_acls")(authz);
                 boost::python::list cache = boost::python::list(retval[1]);
+                std::string username = boost::python::extract<std::string>(retval[2]);
+                if (!username.empty()) {
+                    const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
+                }
                 uint64_t cache_expiry = boost::python::extract<uint64_t>(retval[0]);
                 access_rules.reset(new XrdAccRules(now + cache_expiry));
                 access_rules->parse(cache);
@@ -245,7 +250,7 @@ XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
     //   - RTLD_NOLOAD instructs the loader to actually reload instead of doing an initial load.
     //   - RTLD_NODELETE instructs the loader to not unload this library -- we need python kept in
     //     memory!
-    void *handle = dlopen("libXrdAccSciTokens.so", RTLD_GLOBAL|RTLD_NODELETE|RTLD_NOLOAD|RTLD_LAZY);
+    void *handle = dlopen("libXrdAccSciTokens-4.so", RTLD_GLOBAL|RTLD_NODELETE|RTLD_NOLOAD|RTLD_LAZY);
     if (handle == nullptr) {
         XrdSysError eDest(lp, "scitokens_");
         eDest.Emsg("XrdAccSciTokens", "Failed to reload python libraries:", dlerror());

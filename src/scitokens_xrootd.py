@@ -17,6 +17,7 @@ class AclGenerator(object):
         self.aops = set()
         self.paths = set()
         self.cache_expiry = 60
+        self.subject = ""
 
     def validate_authz(self, values):
         if isinstance(values, str):
@@ -64,7 +65,7 @@ def generate_acls(header):
     except Exception as e:
         # Uncomment below to test ACLs even when valid tokens aren't available.
         #print "Token deserialization failed", str(e)
-        #return 60, [(_scitokens_xrootd.AccessOperation.Read, "/home/cse496/bbockelm")]
+        #return 60, [(_scitokens_xrootd.AccessOperation.Read, "/home/cse496/bbockelm")], "bbockelm"
         raise
 
     ag = AclGenerator()
@@ -75,5 +76,5 @@ def generate_acls(header):
     validator.add_validator("exp", ag.validate_exp)
     validator.validate()
 
-    return ag.cache_expiry, list(ag.generate_acls())
+    return ag.cache_expiry, list(ag.generate_acls()), ag.subject
 
