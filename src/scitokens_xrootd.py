@@ -5,7 +5,6 @@ import os
 import time
 import urllib
 
-import urltools
 import scitokens
 import _scitokens_xrootd
 
@@ -46,7 +45,7 @@ class AclGenerator(object):
         for value in values:
             if not value.startswith("/"):
                 return False
-            self.paths.add(urltools.normalize(value))
+            self.paths.add(scitokens.urltools.normalize_path(value))
         return True
 
     def validate_exp(self, value):
@@ -98,7 +97,7 @@ def config(fname):
             print "Ignoring section %s as it has no `base_path` option set." % section
         issuer = cp.get(section, 'issuer')
         base_path = cp.get(section, 'base_path')
-        base_path = urltools.normalize(base_path)
+        base_path = scitokens.urltools.normalize_path(base_path)
         issuer_info = g_authorized_issuers.setdefault(issuer, {})
         issuer_info['base_path'] = base_path
         if 'map_subject' in cp.options(section):
@@ -162,4 +161,3 @@ def generate_acls(header):
     if g_authorized_issuers[issuer].get('map_subject'):
         subject = ag.subject
     return int(ag.cache_expiry), list(ag.generate_acls()), str(subject)
-
