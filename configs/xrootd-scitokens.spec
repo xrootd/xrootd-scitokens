@@ -1,39 +1,41 @@
 Name: xrootd-scitokens
-Version: 0.1.0
+Version: 0.2.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
 URL: https://github.com/scitokens/xrootd-scitokens
 
-# cd ~/rpmbuild/SOURCES
-# git clone --depth=1 https://github.com/scitokens/xrootd-scitokens
-# rm -rf xrootd-scitokens/.git
-# rm -f xrootd-scitokens/.gitignore
-# tar -cvzf xrootd-scitokens-0.1.0.tar.gz xrootd-scitokens
+# Generated from:
+# git archive v%{version} --prefix=xrootd-scitokens-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-scitokens-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
-BuildRequires: gcc-c++, cmake, python2-scitokens, boost-devel, boost-python, python-devel, xrootd-server-devel
+BuildRequires: gcc-c++
+BuildRequires: cmake
+BuildRequires: boost-devel
+BuildRequires: python-devel
+BuildRequires: xrootd-server-devel
+
+Requires: python2-scitokens
+#Requires: boost-python
 
 %description
 SciTokens authentication plugin for XRootD
 
 %prep
-%setup -c -n %{name}-%{version}.tar.gz 
+%setup -q
 
 %build
-cd %{name}
 mkdir build
 cd build
 %cmake ..
 make 
 
 %install
-cd %{name}
-cd build
+pushd build
 rm -rf $RPM_BUILD_ROOT
 echo $RPM_BUILD_ROOT
 make install DESTDIR=$RPM_BUILD_ROOT
-cd ..
+popd
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -52,5 +54,8 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Wed Sep 20 2017 Brian Bockelman <bbockelm@cse.unl.edu> - 0.2.0-1
+- Remove urltools dependency.
+
 * Wed Sep 20 2017 Lincoln Bryant <lincolnb@uchicago.edu> - 0.1.0-1
 - Initial package
