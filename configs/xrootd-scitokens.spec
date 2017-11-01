@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 0.2.0
+Version: 0.3.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0

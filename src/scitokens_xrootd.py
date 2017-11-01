@@ -9,6 +9,7 @@ import scitokens
 import _scitokens_xrootd
 
 g_authorized_issuers = {}
+g_default_negative_cache = 60
 
 class InvalidAuthorization(object):
     """
@@ -128,7 +129,7 @@ def generate_acls(header):
     """
     orig_header = urllib.unquote(header)
     if not orig_header.startswith("Bearer "):
-        return 60, [], ""
+        return g_default_negative_cache, [], ""
     token = orig_header[7:]
     try:
         scitoken = scitokens.SciToken.deserialize(token)
@@ -142,22 +143,30 @@ def generate_acls(header):
     issuer = claims['iss']
     if issuer not in g_authorized_issuers:
         print "Token issuer (%s) not configured." % issuer
-        return 60, [], ""
+        return g_default_negative_cache, [], ""
     base_path = g_authorized_issuers[issuer]['base_path']
 
-    ag = AclGenerator(base_path)
+    enforcer = scitokens.Enforcer(issuer)
+    scitokens_acl = enforcer.generate_acls(scitoken)
+    cache_expiry = max(time.time()-float(claims['exp']), 60)
 
-    validator = scitokens.Validator()
-    validator.add_validator("authz", ag.validate_authz)
-    validator.add_validator("path", ag.validate_path)
-    validator.add_validator("exp", ag.validate_exp)
-    validator.add_validator("sub", ag.validate_sub)
-    validator.add_validator("iss", ag.validate_iss)
-    validator.add_validator("iat", ag.validate_iss)
-    validator.add_validator("nbf", ag.validate_iss)
-    validator.validate(scitoken)
+    acls = []
+    for acl in scitokens_acl:
+        authz, path = acl
+        if not path: continue
+        # Note that in SciTokens, all valid paths should be absolute.
+        path = str(os.path.normpath(base_path + "/" + path))
+        while path.startswith("//"):
+            path = path[1:]
+        if authz == 'read':
+            acls.append((_scitokens_xrootd.AccessOperation.Read, path))
+        elif value == "write":
+            acls.append((_scitokens_xrootd.AccessOperation.Update, path))
+            acls.append((_scitokens_xrootd.AccessOperation.Create, path))
+        else:
+            print "Encountered unknown authorization: %s; ignoring" % authz
 
     subject = ""
-    if g_authorized_issuers[issuer].get('map_subject'):
-        subject = ag.subject
-    return int(ag.cache_expiry), list(ag.generate_acls()), str(subject)
+    if g_authorized_issuers[issuer].get('map_subject') and ('sub' in claims):
+        subject = claims['sub']
+    return int(cache_expiry), acls, str(subject)
