@@ -160,7 +160,7 @@ def generate_acls(header):
             path = path[1:]
         if authz == 'read':
             acls.append((_scitokens_xrootd.AccessOperation.Read, path))
-        elif value == "write":
+        elif authz == "write":
             acls.append((_scitokens_xrootd.AccessOperation.Update, path))
             acls.append((_scitokens_xrootd.AccessOperation.Create, path))
         else:
