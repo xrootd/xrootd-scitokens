@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 0.3.0
+Version: 0.3.1
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -54,6 +54,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Mon Nov 06 2017 Brian Bockelman <bbockelm@cse.unl.edu> - 0.3.1-1
+- Fix issue with translating write authz.
+
 * Wed Sep 20 2017 Brian Bockelman <bbockelm@cse.unl.edu> - 0.2.0-1
 - Remove urltools dependency.
 
