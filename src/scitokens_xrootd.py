@@ -33,6 +33,7 @@ class AclGenerator(object):
         for value in values:
             if value == "read":
                 self.aops.add(_scitokens_xrootd.AccessOperation.Read)
+                self.aops.add(_scitokens_xrootd.AccessOperation.Stat)
             elif value == "write":
                 self.aops.add(_scitokens_xrootd.AccessOperation.Update)
                 self.aops.add(_scitokens_xrootd.AccessOperation.Create)
@@ -160,6 +161,7 @@ def generate_acls(header):
             path = path[1:]
         if authz == 'read':
             acls.append((_scitokens_xrootd.AccessOperation.Read, path))
+            acls.append((_scitokens_xrootd.AccessOperation.Stat, path))
         elif authz == "write":
             acls.append((_scitokens_xrootd.AccessOperation.Update, path))
             acls.append((_scitokens_xrootd.AccessOperation.Create, path))
