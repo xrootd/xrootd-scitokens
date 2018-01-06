@@ -180,6 +180,7 @@ public:
             }
         }
         if (!access_rules) {
+            std::lock_guard<std::mutex> guard(m_mutex);
             try {
                 boost::python::object retval = m_module.attr("generate_acls")(authz);
                 boost::python::list cache = boost::python::list(retval[1]);
@@ -192,10 +193,7 @@ public:
                 m_log.Emsg("Access", "Error generating ACLs for authorization", handle_pyerror().c_str());
                 return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
             }
-            {
-                std::lock_guard<std::mutex> guard(m_mutex);
-                m_map[authz] = access_rules;
-            }
+            m_map[authz] = access_rules;
         }
         const std::string &username = access_rules->get_username();
         if (!username.empty() && !Entity->name) {
