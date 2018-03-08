@@ -50,6 +50,9 @@ are:
    - `issuer` (required): The URI of the token issuer; this must match the value of the corresponding claim int
       the token.
    - `base_path` (required): The path any token authorizations are relative to.
+   - `restricted_path` (optional): Any restrictions on the paths the issuer can authorize *inside* their namespace.  This
+      meant to be a mechanism to help with transitions, where the local site storage is setup such that an issuer's
+      namespace contains directories that should not be managed by the issuer.
    - `map_subject` (optional): Defaults to `false`; if set to `true`, any contents of the `sub` claim will be copied
       into the Xrootd username.  When combined with the [xrootd-multiuser](https://github.com/bbockelm/xrootd-multiuser)
       plugin, this will allow the Xrootd daemon to write out files utilizing the Unix username specified by the VO
