@@ -104,6 +104,8 @@ def config(fname):
         issuer_info['base_path'] = base_path
         if 'map_subject' in cp.options(section):
             issuer_info['map_subject'] = cp.getboolean(section, 'map_subject')
+        if 'default_user' in cp.options(section):
+            issuer_info['default_user'] = cp.get(section, 'default_user')
         print "Configured token access for %s (issuer %s): %s" % (section, issuer, str(issuer_info))
 
 def init(parms=None):
@@ -171,4 +173,8 @@ def generate_acls(header):
     subject = ""
     if g_authorized_issuers[issuer].get('map_subject') and ('sub' in claims):
         subject = claims['sub']
+    else:
+        default_user = g_authorized_issuers[issuer].get('default_user')
+        if default_user:
+            subject = default_user
     return int(cache_expiry), acls, str(subject)

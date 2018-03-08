@@ -41,6 +41,7 @@ entry:
 issuer = https://scitokens.org/osg-connect
 base_path = /stash
 map_subject = True
+default_user = osg
 ```
 
 Each section name specifying a new issuer *MUST* be prefixed with `Issuer`.  Known attributes
@@ -53,3 +54,6 @@ are:
       into the Xrootd username.  When combined with the [xrootd-multiuser](https://github.com/bbockelm/xrootd-multiuser)
       plugin, this will allow the Xrootd daemon to write out files utilizing the Unix username specified by the VO
       in the token.  Except in narrow use cases, the default of `false` is sufficient.
+   - `default_user` (optional): If set, then all authorized operations will be done under the provided username when
+      interacting with the filesystem.  This is useful in the case where the administrator desires that all files owned
+      by an issuer should be mapped to a particular Unix user account at the site.
