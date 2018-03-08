@@ -19,12 +19,12 @@ class InvalidAuthorization(object):
 
 class AclGenerator(object):
 
-    def __init__(self, base_path="/"):
+    def __init__(self, base_paths=["/"]):
         self.aops = set()
         self.paths = set()
         self.cache_expiry = 60
         self.subject = ""
-        self.base_path = base_path
+        self.base_paths = base_paths
         self.issuer = None
 
     def validate_authz(self, values):
@@ -74,10 +74,11 @@ class AclGenerator(object):
         for aop in self.aops:
             for path in self.paths:
                 # Note that in validate_path we verified `path` starts with '/'
-                path = str(os.path.normpath(self.base_path + path))
-                while path.startswith("//"):
-                    path = path[1:]
-                yield (aop, path)
+                for base_path in self.base_path:
+                    path = str(os.path.normpath(base_path + path))
+                    while path.startswith("//"):
+                        path = path[1:]
+                    yield (aop, path)
 
 
 def config(fname):
@@ -98,10 +99,15 @@ def config(fname):
         if 'base_path' not in cp.options(section):
             print "Ignoring section %s as it has no `base_path` option set." % section
         issuer = cp.get(section, 'issuer')
-        base_path = cp.get(section, 'base_path')
-        base_path = scitokens.urltools.normalize_path(base_path)
+        base_paths = cp.get(section, 'base_path')
+        base_paths = base_paths.split(",")
+        base_paths = [scitokens.urltools.normalize_path(base_path.strip()) for base_path in base_paths]
         issuer_info = g_authorized_issuers.setdefault(issuer, {})
-        issuer_info['base_path'] = base_path
+        if 'restricted_path' in cp.options(section):
+            issuer_info['restricted_paths'] = cp.get(section, "restricted_path")
+            issuer_info['restricted_paths'] = issuer_info['restricted_paths'].split(",")
+            issuer_info['restricted_paths'] = [scitokens.urltools.normalize_path(i.strip()) for i in issuer_info['restricted_paths']]
+        issuer_info['base_paths'] = base_paths
         if 'map_subject' in cp.options(section):
             issuer_info['map_subject'] = cp.getboolean(section, 'map_subject')
         if 'default_user' in cp.options(section):
@@ -147,28 +153,38 @@ def generate_acls(header):
     if issuer not in g_authorized_issuers:
         print "Token issuer (%s) not configured." % issuer
         return g_default_negative_cache, [], ""
-    base_path = g_authorized_issuers[issuer]['base_path']
+    base_paths = g_authorized_issuers[issuer]['base_paths']
 
     enforcer = scitokens.Enforcer(issuer)
     scitokens_acl = enforcer.generate_acls(scitoken)
     cache_expiry = max(time.time()-float(claims['exp']), 60)
 
     acls = []
+    restricted_paths = g_authorized_issuers[issuer].get('restricted_paths', [])
     for acl in scitokens_acl:
         authz, path = acl
         if not path: continue
+        if restricted_paths:
+            found_path = False
+            for restricted_path in restricted_paths:
+                if path.startswith(restricted_path):
+                    found_path = True
+                    break
+            if not found_path:
+                continue
         # Note that in SciTokens, all valid paths should be absolute.
-        path = str(os.path.normpath(base_path + "/" + path))
-        while path.startswith("//"):
-            path = path[1:]
-        if authz == 'read':
-            acls.append((_scitokens_xrootd.AccessOperation.Read, path))
-            acls.append((_scitokens_xrootd.AccessOperation.Stat, path))
-        elif authz == "write":
-            acls.append((_scitokens_xrootd.AccessOperation.Update, path))
-            acls.append((_scitokens_xrootd.AccessOperation.Create, path))
-        else:
-            print "Encountered unknown authorization: %s; ignoring" % authz
+        for base_path in base_paths:
+            path = str(os.path.normpath(base_path + "/" + path))
+            while path.startswith("//"):
+                path = path[1:]
+            if authz == 'read':
+                acls.append((_scitokens_xrootd.AccessOperation.Read, path))
+                acls.append((_scitokens_xrootd.AccessOperation.Stat, path))
+            elif authz == "write":
+                acls.append((_scitokens_xrootd.AccessOperation.Update, path))
+                acls.append((_scitokens_xrootd.AccessOperation.Create, path))
+            else:
+                print "Encountered unknown authorization: %s; ignoring" % authz
 
     subject = ""
     if g_authorized_issuers[issuer].get('map_subject') and ('sub' in claims):
