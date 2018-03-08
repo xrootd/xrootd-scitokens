@@ -165,7 +165,7 @@ public:
                                   const Access_Operation oper,
                                         XrdOucEnv       *env)
     {
-        const char *authz = env->Get("authz");
+        const char *authz = env ? env->Get("authz") : nullptr;
         if (authz == nullptr) {
             return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
         }
