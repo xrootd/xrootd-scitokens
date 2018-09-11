@@ -83,6 +83,7 @@ class AclGenerator(object):
 
 
 def config(fname):
+    global g_audience
     print "Trying to load configuration from %s" % fname
     cp = ConfigParser.SafeConfigParser()
     try:
@@ -93,11 +94,10 @@ def config(fname):
             return
         raise
         
-    if 'global' in cp.sections():
-        if 'audience' in cp.options('global'):
-            g_audience = cp.get('global', 'audience')
-        
     for section in cp.sections():
+        if section.lower() == 'global':
+            if 'audience' in cp.options(section):
+                g_audience = cp.get(section, 'audience')
         if not section.lower().startswith("issuer "):
             continue
         if 'issuer' not in cp.options(section):
@@ -143,6 +143,7 @@ def generate_acls(header):
     """
     Generate a list of ACLs and the ACL timeut
     """
+    global g_audience
     orig_header = urllib.unquote(header)
     if not orig_header.startswith("Bearer "):
         return g_default_negative_cache, [], ""
@@ -168,7 +169,7 @@ def generate_acls(header):
         return g_default_negative_cache, [], ""
     base_paths = g_authorized_issuers[issuer]['base_paths']
 
-    enforcer = scitokens.Enforcer(issuer)
+    enforcer = scitokens.Enforcer(issuer, audience = g_audience)
     scitokens_acl = enforcer.generate_acls(scitoken)
     cache_expiry = max(time.time()-float(claims['exp']), 60)
 
