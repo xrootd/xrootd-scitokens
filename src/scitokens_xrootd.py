@@ -10,6 +10,7 @@ import _scitokens_xrootd
 
 g_authorized_issuers = {}
 g_default_negative_cache = 60
+g_audience = None
 
 class InvalidAuthorization(object):
     """
@@ -91,6 +92,11 @@ def config(fname):
         if ie.errno == errno.ENOENT:
             return
         raise
+        
+    if 'global' in cp.sections():
+        if 'audience' in cp.options('global'):
+            g_audience = cp.get('global', 'audience')
+        
     for section in cp.sections():
         if not section.lower().startswith("issuer "):
             continue
@@ -112,6 +118,7 @@ def config(fname):
             issuer_info['map_subject'] = cp.getboolean(section, 'map_subject')
         if 'default_user' in cp.options(section):
             issuer_info['default_user'] = cp.get(section, 'default_user')
+
         print "Configured token access for %s (issuer %s): %s" % (section, issuer, str(issuer_info))
 
 def init(parms=None):
@@ -141,7 +148,13 @@ def generate_acls(header):
         return g_default_negative_cache, [], ""
     token = orig_header[7:]
     try:
-        scitoken = scitokens.SciToken.deserialize(token)
+        # We can't get the issuer info out of a SciToken without
+        # verifying it first, which checks the audience.  It's not
+        # a SciTokens problem, that is just how pyjwt API treats things.
+        # We could use the raw pyjwt library, get unverified issuer,
+        # but that seems like we are going around the SciTokens library
+        # So the audience is defined globally in the config
+        scitoken = scitokens.SciToken.deserialize(token, audience = g_audience)
     except Exception as e:
         # Uncomment below to test ACLs even when valid tokens aren't available.
         #print "Token deserialization failed", str(e)
