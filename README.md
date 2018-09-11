@@ -17,6 +17,9 @@ To load the plugin, add the following lines to your Xrootd configuration file:
 ```
 ofs.authorize
 ofs.authlib libXrdAccSciTokens.so
+
+# Pass the bearer token to the Xrootd authorization framework.
+http.header2cgi Authorization authz
 ```
 
 Restart the Xrootd service.  The SciTokens plugin in the `ofs.authlib` line additionally can take a
