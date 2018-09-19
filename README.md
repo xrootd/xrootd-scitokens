@@ -36,6 +36,9 @@ issuers and maps them to the Xrootd namespace.  It uses the popular INI-format. 
 entry:
 
 ```
+[Global]
+audience = test_server
+
 [Issuer OSG-Connect]
 
 issuer = https://scitokens.org/osg-connect
@@ -43,6 +46,13 @@ base_path = /stash
 map_subject = True
 default_user = osg
 ```
+
+Within the `Global` section, the available attributes are:
+
+   - `audience` (optional): A comma separated list of acceptable audiences.  The tokens must have an `aud` attribute
+     that exactly matches this value
+   - `audience_json` (optional): JSON string or list specifying the acceptable audiences.  This audience option will allow
+     commas and spaces within the audience.  `audience_json` takes precedence over `audience`.
 
 Each section name specifying a new issuer *MUST* be prefixed with `Issuer`.  Known attributes
 are:

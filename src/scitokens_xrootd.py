@@ -4,6 +4,7 @@ import errno
 import os
 import time
 import urllib
+import json
 
 import scitokens
 import _scitokens_xrootd
@@ -96,8 +97,14 @@ def config(fname):
         
     for section in cp.sections():
         if section.lower() == 'global':
-            if 'audience' in cp.options(section):
-                g_audience = cp.get(section, 'audience')
+            if 'audience_json' in cp.options(section):
+                # Read in the audience as json.  Hopefully it's in list format or a string
+                g_audience = json.loads(cp.get("Global", "audience_json"))
+            elif 'audience' in cp.options(section):
+                g_audience = cp.get("Global", "audience")
+                if ',' in g_audience:
+                    # Split the audience list
+                    g_audience = re.split("\s*,\s*", g_global_audience)
         if not section.lower().startswith("issuer "):
             continue
         if 'issuer' not in cp.options(section):
