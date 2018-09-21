@@ -8,6 +8,7 @@ import json
 
 import scitokens
 import _scitokens_xrootd
+from collections import Iterable
 
 g_authorized_issuers = {}
 g_default_negative_cache = 60
@@ -104,7 +105,13 @@ def config(fname):
                 g_audience = cp.get("Global", "audience")
                 if ',' in g_audience:
                     # Split the audience list
-                    g_audience = re.split("\s*,\s*", g_global_audience)
+                    g_audience = re.split("\s*,\s*", g_audience)
+
+            # Always make g_audience a list
+            if not isinstance(g_audience, Iterable):
+                g_audience = [ g_audience ]
+
+
         if not section.lower().startswith("issuer "):
             continue
         if 'issuer' not in cp.options(section):
