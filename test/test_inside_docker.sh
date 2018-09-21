@@ -13,6 +13,8 @@ yum -y install yum-plugin-priorities rpm-build gcc gcc-c++ boost-devel boost-pyt
 
 rpm -Uvh https://repo.opensciencegrid.org/osg/3.4/osg-3.4-el${OS_VERSION}-release-latest.rpm
 
+yum -y install xrootd-server-devel
+
 # Prepare the RPM environment
 mkdir -p /tmp/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
@@ -25,7 +27,7 @@ git archive --format=tar --prefix=xrootd-scitokens-${package_version}/ HEAD | \
 popd
 
 # Build the RPM
-rpmbuild --define '_topdir /tmp/rpmbuild' -ba /tmp/rpmbuild/SPECS/xrootd-scitokens
+rpmbuild --define '_topdir /tmp/rpmbuild' -ba /tmp/rpmbuild/SPECS/xrootd-scitokens.spec
 
 # After building the RPM, try to install it
 # Fix the lock file error on EL7.  /var/lock is a symlink to /var/run/lock
