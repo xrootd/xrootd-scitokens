@@ -37,3 +37,59 @@ RPM_LOCATION=/tmp/rpmbuild/RPMS/x86_64
 
 yum localinstall -y $RPM_LOCATION/xrootd-scitokens-${package_version}*
 
+# Stand up a web server to server the public key
+yum -y install httpd mod_ssl xrootd-server
+
+# Create the public and private key
+scitokens-admin-create-key --create-keys --pem-private > private.pem
+mkdir /var/www/html/oauth2
+scitokens-admin-create-key --private-keyfile private.pem --jwks-public > /var/www/html/oauth2/certs
+mkdir /var/www/html/.well-known
+cat << EOF > /var/www/html/.well-known/openid-configuration
+{  
+   "issuer":"https://localhost/",
+   "jwks_uri":"https://localhost/oauth2/certs"
+}
+EOF
+
+# Create the self signed x509 cert so we can use https (required by scitokens)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -config xrootd-scitokens/test/openssl-selfsigned.conf -subj '/CN=localhost/O=SciTokens/C=US'
+cp localhost.crt /etc/ssl/certs/localhost.crt
+mkdir -p /etc/ssl/private
+cp localhost.key /etc/ssl/private/localhost.key
+
+cat << EOF > /etc/httpd/conf.d/scitokens.conf
+
+<VirtualHost _default_:443>
+DocumentRoot /var/www/html
+    
+SSLEngine on
+SSLCertificateFile /etc/ssl/certs/localhost.crt
+SSLCertificateKeyFile /etc/ssl/private/localhost.key
+SSLCertificateChainFile /etc/ssl/certs/localhost.crt
+</VirtualHost>
+EOF
+
+systemctl restart httpd
+
+# Put configs into place
+cp -f xrootd-scitokens/test/config/xrootd-http.cfg /etc/xrootd/xrootd-http.cfg
+cp -f xrootd-scitokens/test/config/scitokens-no-aud.cfg /etc/xrootd/scitokens.cfg
+
+mkdir /etc/systemd/system/xrootd@http.service.d/
+cp xrootd-scitokens/test/config/override.conf /etc/systemd/system/xrootd@http.service.d/override.conf
+
+systemctl daemon-reload
+systemctl start xrootd@http.service
+
+echo "verify=disable" >> /etc/python/cert-verification.cfg
+
+# Generate a random file
+NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+echo $NEW_UUID > /tmp/random.txt
+
+
+
+
+
+

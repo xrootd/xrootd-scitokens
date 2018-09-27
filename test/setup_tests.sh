@@ -18,7 +18,7 @@ if [ "${OS_VERSION}" = "7" ]; then
            echo -ne \"------\nEND XROOTD-SCITOKENS TESTS\n\";"
 
     docker ps -a
-    docker stop $DOCKER_CONTAINER_ID
-    docker rm -v $DOCKER_CONTAINER_ID
+    #docker stop $DOCKER_CONTAINER_ID
+    #docker rm -v $DOCKER_CONTAINER_ID
 
 fi
