@@ -5,6 +5,7 @@ import os
 import time
 import urllib
 import json
+import re
 
 import scitokens
 import _scitokens_xrootd
