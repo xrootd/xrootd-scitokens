@@ -1,4 +1,5 @@
 import urllib2
+import argparse
 
 import scitokens
 
@@ -6,6 +7,10 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 
 def main():
+    
+    parser = argparse.ArgumentParser(description='Create token and test endpoint.')
+    parser.add_argument('--aud', dest='aud', help="Insert an audience")
+    args = parser.parse_args()
     
     private_key = None
     with open('private.pem', 'rb') as key_file:
@@ -17,6 +22,9 @@ def main():
         
     token = scitokens.SciToken(key=private_key)
     token["scope"] = "read:/"
+    
+    if 'aud' in args and args.aud is not None:
+        token["aud"] = args.aud
     
     token_str = token.serialize(issuer="https://localhost")
     headers = {"Authorization": "Bearer {0}".format(token_str)}

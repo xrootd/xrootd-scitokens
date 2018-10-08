@@ -35,7 +35,8 @@ mkdir -p /var/run/lock
 
 RPM_LOCATION=/tmp/rpmbuild/RPMS/x86_64
 
-yum localinstall -y $RPM_LOCATION/xrootd-scitokens-${package_version}*
+# Enable osg-development repo for new python-jwt
+yum localinstall --enablerepo=osg-development -y $RPM_LOCATION/xrootd-scitokens-${package_version}*
 
 # Stand up a web server to server the public key
 yum -y install httpd mod_ssl xrootd-server
@@ -80,7 +81,7 @@ mkdir /etc/systemd/system/xrootd@http.service.d/
 cp xrootd-scitokens/test/config/override.conf /etc/systemd/system/xrootd@http.service.d/override.conf
 
 systemctl daemon-reload
-systemctl start xrootd@http.service
+systemctl restart xrootd@http.service
 
 echo "verify=disable" >> /etc/python/cert-verification.cfg
 
@@ -93,6 +94,60 @@ py_output=$(python xrootd-scitokens/test/create-pubkey.py)
 if [ "$py_output" != "$NEW_UUID" ]; then
   exit 1
 fi
+
+# Test sending aud when there is no audience configured on the server
+if python xrootd-scitokens/test/create-pubkey.py --aud="testing.com"; then 
+  exit 1
+fi
+
+
+# Test single aud
+cp -f xrootd-scitokens/test/config/scitokens-aud.cfg /etc/xrootd/scitokens.cfg
+systemctl restart xrootd@http.service
+
+NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+echo $NEW_UUID > /tmp/random.txt
+
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com")
+
+if [ "$py_output" != "$NEW_UUID" ]; then
+  exit 1
+fi
+
+# Test sending no aud when an audience is configured
+if python xrootd-scitokens/test/create-pubkey.py; then
+  exit 1
+fi
+
+# Test multiple aud
+cp -f xrootd-scitokens/test/config/scitokens-multi-aud.cfg /etc/xrootd/scitokens.cfg
+systemctl restart xrootd@http.service
+
+NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+echo $NEW_UUID > /tmp/random.txt
+
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com")
+
+if [ "$py_output" != "$NEW_UUID" ]; then
+  exit 1
+fi
+
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="https://another.com")
+
+if [ "$py_output" != "$NEW_UUID" ]; then
+  exit 1
+fi
+
+# Test sending no aud when an audience is configured
+if python xrootd-scitokens/test/create-pubkey.py; then 
+  exit 1
+fi
+
+# Test sending wrong aud when an audience is configured
+if python xrootd-scitokens/test/create-pubkey.py --aud="wrong.com"; then
+  exit 1
+fi
+
 
 
 
