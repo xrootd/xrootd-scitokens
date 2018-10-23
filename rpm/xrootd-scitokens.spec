@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 0.5.0
+Version: 0.6.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -54,6 +54,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Tue Oct 23 2018 Derek Weitzel <dweitzel@cse.unl.edu> - 0.6.0-1
+- Add support for audiences and multiple audience support
+
 * Thu Mar 08 2018 Brian Bockelman <bbockelm@cse.unl.edu> - 0.5.0-1
 - Add support for multiple base paths of an issuer.
 - Add concept of restricting authorized paths within an issuer's namespace.
