@@ -4,12 +4,16 @@ import errno
 import os
 import time
 import urllib
+import json
+import re
 
 import scitokens
 import _scitokens_xrootd
+from collections import Iterable
 
 g_authorized_issuers = {}
 g_default_negative_cache = 60
+g_audience = None
 
 class InvalidAuthorization(object):
     """
@@ -82,6 +86,7 @@ class AclGenerator(object):
 
 
 def config(fname):
+    global g_audience
     print "Trying to load configuration from %s" % fname
     cp = ConfigParser.SafeConfigParser()
     try:
@@ -91,7 +96,23 @@ def config(fname):
         if ie.errno == errno.ENOENT:
             return
         raise
+        
     for section in cp.sections():
+        if section.lower() == 'global':
+            if 'audience_json' in cp.options(section):
+                # Read in the audience as json.  Hopefully it's in list format or a string
+                g_audience = json.loads(cp.get("Global", "audience_json"))
+            elif 'audience' in cp.options(section):
+                g_audience = cp.get("Global", "audience")
+                if ',' in g_audience:
+                    # Split the audience list
+                    g_audience = re.split("\s*,\s*", g_audience)
+
+            # Always make g_audience a list
+            if not isinstance(g_audience, Iterable):
+                g_audience = [ g_audience ]
+
+
         if not section.lower().startswith("issuer "):
             continue
         if 'issuer' not in cp.options(section):
@@ -112,6 +133,7 @@ def config(fname):
             issuer_info['map_subject'] = cp.getboolean(section, 'map_subject')
         if 'default_user' in cp.options(section):
             issuer_info['default_user'] = cp.get(section, 'default_user')
+
         print "Configured token access for %s (issuer %s): %s" % (section, issuer, str(issuer_info))
 
 def init(parms=None):
@@ -136,12 +158,19 @@ def generate_acls(header):
     """
     Generate a list of ACLs and the ACL timeut
     """
+    global g_audience
     orig_header = urllib.unquote(header)
     if not orig_header.startswith("Bearer "):
         return g_default_negative_cache, [], ""
     token = orig_header[7:]
     try:
-        scitoken = scitokens.SciToken.deserialize(token)
+        # We can't get the issuer info out of a SciToken without
+        # verifying it first, which checks the audience.  It's not
+        # a SciTokens problem, that is just how pyjwt API treats things.
+        # We could use the raw pyjwt library, get unverified issuer,
+        # but that seems like we are going around the SciTokens library
+        # So the audience is defined globally in the config
+        scitoken = scitokens.SciToken.deserialize(token, audience = g_audience)
     except Exception as e:
         # Uncomment below to test ACLs even when valid tokens aren't available.
         #print "Token deserialization failed", str(e)
@@ -155,7 +184,7 @@ def generate_acls(header):
         return g_default_negative_cache, [], ""
     base_paths = g_authorized_issuers[issuer]['base_paths']
 
-    enforcer = scitokens.Enforcer(issuer)
+    enforcer = scitokens.Enforcer(issuer, audience = g_audience)
     scitokens_acl = enforcer.generate_acls(scitoken)
     cache_expiry = max(time.time()-float(claims['exp']), 60)
 
