@@ -15,7 +15,7 @@ BuildRequires: boost-devel
 BuildRequires: python-devel
 BuildRequires: xrootd-server-devel
 
-Requires: python2-scitokens
+Requires: python2-scitokens >= 1.2.1
 #Requires: boost-python
 
 %description
