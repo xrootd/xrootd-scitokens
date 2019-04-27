@@ -10,6 +10,10 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <sstream>
+
+#include "INIReader.h"
+#include "picojson.h"
 
 XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
 
@@ -204,8 +208,65 @@ private:
         return false;
     }
 
-    void Reconfig()
+    bool Reconfig()
     {
+        errno = 0;
+        INIReader reader(m_parms);
+        if (reader.ParseError() < 0) {
+            std::stringstream ss;
+            ss << "Error opening config file (" << m_parms << "): " << strerror(errno);
+            m_log.Emsg("Reconfig", ss.str().c_str());
+            return false;
+        } else if (reader.ParseError()) {
+            std::stringstream ss;
+            ss << "Parse error on line " << reader.ParseError() << " of file " << m_parms;
+            m_log.Emsg("Reconfig", ss.str().c_str());
+            return false;
+        }
+        std::vector<std::string> audiences;
+        for (const auto &section : reader.Sections()) {
+            std::string section_lower;
+            std::transform(section.begin(), section.end(), std::back_inserter(section_lower),
+                [](unsigned char c){ return std::tolower(c); });
+
+            if (section_lower.substr(0, 6) == "global") {
+                auto audience = reader.Get(section, "audience", "");
+                if (!audience.empty()) {
+                    size_t pos = 0;
+                    do {
+                        while (audience.size() > pos && (audience[pos] == ',' || audience[pos] == ' ')) {pos++;}
+                        auto next_pos = audience.find_first_of(", ", pos);
+                        auto next_aud = audience.substr(pos, next_pos - pos);
+                        pos = next_pos;
+                        if (!next_aud.empty()) {
+                            audiences.push_back(next_aud);
+                        }
+                    } while (pos != std::string::npos);
+                }
+                audience = reader.Get(section, "audience_json", "");
+                if (!audience.empty()) {
+                    picojson::value json_obj;
+                    auto err = picojson::parse(json_obj, audience);
+                    if (!err.empty()) {
+                        m_log.Emsg("Reconfig", "Unable to parse audience_json: ", err.c_str());
+                        return false;
+                    }
+                    if (!json_obj.is<picojson::value::array>()) {
+                        m_log.Emsg("Reconfig", "audience_json must be a list of strings; not a list.");
+                        return false;
+                    }
+                    for (const auto &val : json_obj.get<picojson::value::array>()) {
+                        if (!val.is<std::string>()) {
+                            m_log.Emsg("Reconfig", "audience must be a list of strings; value is not a string.");
+                            return false;
+                        }
+                        audiences.push_back(val.get<std::string>());
+                    }
+                }
+            }
+        }
+        m_audiences = std::move(audiences);
+        return true;
     }
 
     void Check(uint64_t now)
@@ -220,6 +281,7 @@ private:
     }
 
     std::mutex m_mutex;
+    std::vector<std::string> m_audiences;
     std::map<std::string, std::shared_ptr<XrdAccRules>> m_map;
     std::unique_ptr<XrdAccAuthorize> m_chain;
     std::string m_parms;

@@ -23,7 +23,7 @@ endif()
 SET( CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
 SET( CMAKE_MODULE_LINKER_FLAGS "-Wl,--no-undefined")
 
-include_directories(${SCITOKENS_CPP_INCLUDE_DIR} ${XROOTD_INCLUDES})
+include_directories(${SCITOKENS_CPP_INCLUDE_DIR} ${XROOTD_INCLUDES} vendor/picojson vendor/inih)
 
 add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
 target_link_libraries(XrdAccSciTokens -ldl ${SCITOKENS_CPP_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
