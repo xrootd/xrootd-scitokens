@@ -11,9 +11,13 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <unordered_map>
+#include <tuple>
 
 #include "INIReader.h"
 #include "picojson.h"
+
+#include "scitokens/scitokens.h"
 
 XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
 
@@ -86,6 +90,79 @@ XrdAccPrivs AddPriv(Access_Operation op, XrdAccPrivs privs)
     return static_cast<XrdAccPrivs>(new_privs);
 }
 
+bool MakeCanonical(const std::string &path, std::string &result)
+{
+    if (path.empty() || path[0] != '/') {return false;}
+
+    size_t pos = 0;
+    std::vector<std::string> components;
+    do {
+        while (path.size() > pos && path[pos] == '/') {pos++;}
+        auto next_pos = path.find_first_of("/", pos);
+        auto next_component = path.substr(pos, next_pos - pos);
+        pos = next_pos;
+        if (next_component.empty() || next_component == ".") {continue;}
+        else if (next_component == "..") {
+            if (!components.empty()) {
+                components.pop_back();
+            }
+        } else {
+            components.emplace_back(next_component);
+        }
+    } while (pos != std::string::npos);
+    if (components.empty()) {
+        result = "/";
+        return true;
+    }
+    std::stringstream ss;
+    for (const auto &comp : components) {
+        ss << "/" << comp;
+    }
+    result = ss.str();
+    return true;
+}
+
+void ParseCanonicalPaths(const std::string &path, std::vector<std::string> &results)
+{
+    size_t pos = 0;
+    do {
+        while (path.size() > pos && (path[pos] == ',' || path[pos] == ' ')) {pos++;}
+        auto next_pos = path.find_first_of(", ", pos);
+        auto next_path = path.substr(pos, next_pos - pos);
+        pos = next_pos;
+        if (!next_path.empty()) {
+            std::string canonical_path;
+            if (MakeCanonical(next_path, canonical_path)) {
+                results.emplace_back(std::move(canonical_path));
+            }
+        }
+    } while (pos != std::string::npos);
+}
+
+struct IssuerConfig
+{
+    IssuerConfig(const std::string &issuer_name,
+                 const std::string &issuer_url,
+                 const std::vector<std::string> &base_paths,
+                 const std::vector<std::string> &restricted_paths,
+                 bool map_subject,
+                 const std::string &default_user)
+        : m_map_subject(map_subject),
+          m_name(issuer_name),
+          m_url(issuer_url),
+          m_default_user(default_user),
+          m_base_paths(base_paths),
+          m_restricted_paths(restricted_paths)
+    {}
+
+    const bool m_map_subject;
+    const std::string m_name;
+    const std::string m_url;
+    const std::string m_default_user;
+    const std::vector<std::string> m_base_paths;
+    const std::vector<std::string> m_restricted_paths;
+};
+
 }
 
 
@@ -136,11 +213,17 @@ public:
         m_next_clean(monotonic_time() + m_expiry_secs),
         m_log(lp, "scitokens_")
     {
+        pthread_rwlock_init(&m_config_lock, nullptr);
+        m_config_lock_initialized = true;
         m_log.Say("++++++ XrdAccSciTokens: Initialized SciTokens-based authorization.");
         Reconfig();
     }
 
-    virtual ~XrdAccSciTokens() {}
+    virtual ~XrdAccSciTokens() {
+        if (m_config_lock_initialized) {
+            pthread_rwlock_destroy(&m_config_lock);
+        }
+    }
 
     virtual XrdAccPrivs Access(const XrdSecEntity *Entity,
                                   const char         *path,
@@ -205,7 +288,148 @@ public:
 private:
 
     bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username) {
-        return false;
+        if (strncmp(authz.c_str(), "Bearer ", 6)) {
+            return false;
+        }
+
+        // Does this look like a JWT?  If not, bail out early and
+        // do not pollute the log.
+        bool looks_good = true;
+        int separator_count = 0;
+        for (auto cur_char = authz.c_str() + 7; *cur_char; cur_char++) {
+            if (*cur_char == '.') {
+                separator_count++;
+                if (separator_count > 2) {
+                    break;
+                }
+            } else
+            if (!(*cur_char >= 65 && *cur_char <= 90) && // uppercase letters
+                !(*cur_char >= 97 && *cur_char <= 122) && // lowercase letters
+                !(*cur_char >= 48 && *cur_char <= 57) && // numbers
+                (*cur_char != 43) && (*cur_char != 47))
+            {
+                looks_good = false;
+                break;
+            }
+        }
+        if ((separator_count != 2) || (!looks_good)) {
+            return false;
+        }
+
+        char *err_msg;
+        SciToken token = nullptr;
+        pthread_rwlock_rdlock(&m_config_lock);
+        auto retval = scitoken_deserialize(authz.c_str() + 7, &token, &m_valid_issuers_array[0], &err_msg);
+        pthread_rwlock_unlock(&m_config_lock);
+        if (retval) {
+            // This originally looked like a JWT so log the failure.
+            m_log.Emsg("GenerateAcls", "Failed to deserialize SciToken: ", err_msg);
+            free(err_msg);
+            return false;
+        }
+
+        long long expiry;
+        if (scitoken_get_expiration(token, &expiry, &err_msg)) {
+            m_log.Emsg("GenerateAcls", "Unable to determine token expiration: ", err_msg);
+            free(err_msg);
+            scitoken_destroy(token);
+            return false;
+        }
+        if (expiry > 0) {
+            expiry = std::max(static_cast<int64_t>(monotonic_time() - expiry),
+                static_cast<int64_t>(60));
+        } else {
+            expiry = 60;
+        }
+
+        char *value = nullptr;
+        if (scitoken_get_claim_string(token, "issuer", &value, &err_msg)) {
+            m_log.Emsg("GenerateAcls", "Failed to get issuer: ", err_msg);
+            scitoken_destroy(token);
+            free(err_msg);
+            return false;
+        }
+        std::string issuer(value);
+        free(value);
+
+        pthread_rwlock_rdlock(&m_config_lock);
+        auto enf = enforcer_create(issuer.c_str(), &m_audiences_array[0], &err_msg);
+        pthread_rwlock_unlock(&m_config_lock);
+        if (!enf) {
+            m_log.Emsg("GenerateAcls", "Failed to create an enforcer: ", err_msg);
+            scitoken_destroy(token);
+            free(err_msg);
+            return false;
+        }
+
+        Acl *acls = nullptr;
+        if (enforcer_generate_acls(enf, token, &acls, &err_msg)) {
+            scitoken_destroy(token);
+            enforcer_destroy(enf);
+            m_log.Emsg("GenerateAcls", "ACL generation from SciToken failed: ", err_msg);
+            free(err_msg);
+            return false;
+        }
+        enforcer_destroy(enf);
+
+        pthread_rwlock_rdlock(&m_config_lock);
+        auto iter = m_issuers.find(issuer);
+        if (iter == m_issuers.end()) {
+            pthread_rwlock_unlock(&m_config_lock);
+            m_log.Emsg("GenerateAcls", "Authorized issuer without a config.");
+            scitoken_destroy(token);
+            return false;
+        }
+        const auto &config = iter->second;
+        std::string token_username;
+        if (config.m_map_subject) {
+            value = nullptr;
+            if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
+                pthread_rwlock_unlock(&m_config_lock);
+                m_log.Emsg("GenerateAcls", "Failed to get token subject: ", err_msg);
+                free(err_msg);
+                scitoken_destroy(token);
+                return false;
+            }
+            token_username = std::string(value);
+        } else {
+            token_username = config.m_default_user;
+        }
+
+        AccessRulesRaw xrd_rules;
+        int idx = 0;
+        while (acls[idx].resource && acls[idx++].authz) {
+            const auto &acl_path = acls[idx-1].resource;
+            const auto &acl_authz = acls[idx-1].authz;
+            if (!config.m_restricted_paths.empty()) {
+                bool found_path = false;
+                for (const auto &restricted_path : config.m_restricted_paths) {
+                    if (!strncmp(acl_path, restricted_path.c_str(), restricted_path.size())) {
+                        found_path = true;
+                        break;
+                    }
+                }
+                if (!found_path) {continue;}
+            }
+            for (const auto &base_path : config.m_base_paths) {
+                auto path = base_path + "/" + acl_path;
+                if (!strcmp(acl_authz, "read")) {
+                    xrd_rules.emplace_back(AOP_Read, path);
+                    xrd_rules.emplace_back(AOP_Stat, path);
+                } else if (!strcmp(acl_authz, "write")) {
+                    xrd_rules.emplace_back(AOP_Update, path);
+                    xrd_rules.emplace_back(AOP_Create, path);
+                }
+            }
+        }
+
+        pthread_rwlock_unlock(&m_config_lock);
+
+        cache_expiry = expiry;
+        rules = std::move(xrd_rules);
+        username = std::move(token_username);
+
+        return true;
     }
 
     bool Reconfig()
@@ -224,6 +448,7 @@ private:
             return false;
         }
         std::vector<std::string> audiences;
+        std::unordered_map<std::string, IssuerConfig> issuers;
         for (const auto &section : reader.Sections()) {
             std::string section_lower;
             std::transform(section.begin(), section.end(), std::back_inserter(section_lower),
@@ -264,8 +489,72 @@ private:
                     }
                 }
             }
+
+            if (section_lower.substr(0, 7) != "issuer ") {continue;}
+
+            auto issuer = reader.Get(section, "issuer", "");
+            if (issuer.empty()) {
+                m_log.Emsg("Reconfig", "Ignoring section because 'issuer' attribute is not set: ",
+                     section.c_str());
+                continue;
+            }
+
+            auto base_path = reader.Get(section, "base_path", "");
+            if (base_path.empty()) {
+                m_log.Emsg("Reconfig", "Ignoring section because 'base_path' attribute is not set: ",
+                     section.c_str());
+                continue;
+            }
+
+            size_t pos = 7;
+            while (section.size() > pos && std::isspace(section[pos])) {pos++;}
+
+            auto name = section.substr(pos);
+            if (name.empty()) {
+                m_log.Emsg("Reconfig", "Invalid section name: ", section.c_str());
+                continue;
+            }
+
+            std::vector<std::string> base_paths;
+            ParseCanonicalPaths(base_path, base_paths);
+
+            auto restricted_path = reader.Get(section, "restricted_path", "");
+            std::vector<std::string> restricted_paths;
+            if (!restricted_path.empty()) {
+                ParseCanonicalPaths(restricted_path, restricted_paths);
+            }
+
+            auto default_user = reader.Get(section, "default_user", "");
+            auto map_subject = reader.GetBoolean(section, "map_subject", false);
+
+            issuers.emplace(std::piecewise_construct,
+                            std::forward_as_tuple(issuer),
+                            std::forward_as_tuple(name, issuer, base_paths, restricted_paths,
+                                                  map_subject, default_user));
         }
-        m_audiences = std::move(audiences);
+        pthread_rwlock_wrlock(&m_config_lock);
+        try {
+            m_audiences = std::move(audiences);
+            size_t idx = 0;
+            m_audiences_array.reserve(m_audiences.size() + 1);
+            for (const auto &audience : m_audiences) {
+                m_audiences_array[idx++] = audience.c_str();
+            }
+            m_audiences_array[idx] = nullptr;
+
+            m_issuers = std::move(issuers);
+            m_valid_issuers.clear();
+            m_valid_issuers.reserve(m_issuers.size());
+            m_valid_issuers_array.reserve(m_issuers.size() + 1);
+            for (const auto &issuer : m_valid_issuers) {
+                m_valid_issuers_array[idx++] = issuer.c_str();
+            }
+            m_valid_issuers_array[idx] = nullptr;
+        } catch (...) {
+            pthread_rwlock_unlock(&m_config_lock);
+            return false;
+        }
+        pthread_rwlock_unlock(&m_config_lock);
         return true;
     }
 
@@ -280,11 +569,17 @@ private:
         }
     }
 
+    bool m_config_lock_initialized{false};
     std::mutex m_mutex;
+    pthread_rwlock_t m_config_lock;
     std::vector<std::string> m_audiences;
+    std::vector<const char *> m_audiences_array;
     std::map<std::string, std::shared_ptr<XrdAccRules>> m_map;
     std::unique_ptr<XrdAccAuthorize> m_chain;
-    std::string m_parms;
+    const std::string m_parms;
+    std::vector<std::string> m_valid_issuers;
+    std::vector<const char*> m_valid_issuers_array;
+    std::unordered_map<std::string, IssuerConfig> m_issuers;
     uint64_t m_next_clean{0};
     XrdSysError m_log;
 

@@ -5,6 +5,7 @@ project( xrootd-scitokens )
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 
 find_package( Xrootd REQUIRED )
+find_package( SciTokensCpp REQUIRED )
 
 macro(use_cxx11)
   if (CMAKE_VERSION VERSION_LESS "3.1")
@@ -26,7 +27,7 @@ SET( CMAKE_MODULE_LINKER_FLAGS "-Wl,--no-undefined")
 include_directories(${SCITOKENS_CPP_INCLUDE_DIR} ${XROOTD_INCLUDES} vendor/picojson vendor/inih)
 
 add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
-target_link_libraries(XrdAccSciTokens -ldl ${SCITOKENS_CPP_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
+target_link_libraries(XrdAccSciTokens -ldl -lpthread ${SCITOKENS_CPP_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
 set_target_properties(XrdAccSciTokens PROPERTIES OUTPUT_NAME XrdAccSciTokens-4 SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
