@@ -594,6 +594,7 @@ private:
     void Check(uint64_t now)
     {
         if (now <= m_next_clean) {return;}
+        std::lock_guard<std::mutex> guard(m_mutex);
 
         for (auto iter = m_map.begin(); iter != m_map.end(); iter++) {
             if (iter->second->expired()) {
