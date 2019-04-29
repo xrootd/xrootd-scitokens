@@ -298,7 +298,7 @@ private:
         // do not pollute the log.
         bool looks_good = true;
         int separator_count = 0;
-        for (auto cur_char = authz.c_str() + 7; *cur_char; cur_char++) {
+        for (auto cur_char = authz.c_str() + 9; *cur_char; cur_char++) {
             if (*cur_char == '.') {
                 separator_count++;
                 if (separator_count > 2) {
@@ -395,6 +395,7 @@ private:
                 return false;
             }
             token_username = std::string(value);
+            free(value);
         } else {
             token_username = config.m_default_user;
         }
