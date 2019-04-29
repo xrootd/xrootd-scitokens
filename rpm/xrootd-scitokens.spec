@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 0.6.0
+Version: 0.7.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -11,12 +11,8 @@ Source0: %{name}-%{version}.tar.gz
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
-BuildRequires: boost-devel
-BuildRequires: python-devel
 BuildRequires: xrootd-server-devel
-
-Requires: python2-scitokens >= 1.2.1
-#Requires: boost-python
+BuildRequires: scitokens-cpp-devel
 
 %description
 SciTokens authentication plugin for XRootD
@@ -48,8 +44,6 @@ rm -rf $RPM_BUILD_ROOT
 
 %files
 %{_libdir}/libXrdAccSciTokens-4.so
-%{_libdir}/python2.7/site-packages/_scitokens_xrootd.so
-%{_libdir}/python2.7/site-packages/scitokens_xrootd.py*
 
 %defattr(-,root,root,-)
 
