@@ -600,6 +600,9 @@ private:
                 m_map.erase(iter);
             }
         }
+        Reconfig();
+
+        m_next_clean = monotonic_time() + m_expiry_secs;
     }
 
     bool m_config_lock_initialized{false};
