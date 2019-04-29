@@ -216,7 +216,9 @@ public:
         pthread_rwlock_init(&m_config_lock, nullptr);
         m_config_lock_initialized = true;
         m_log.Say("++++++ XrdAccSciTokens: Initialized SciTokens-based authorization.");
-        Reconfig();
+        if (!Reconfig()) {
+            throw std::runtime_error("Failed to configure SciTokens authorization.");
+        }
     }
 
     virtual ~XrdAccSciTokens() {
@@ -288,7 +290,7 @@ public:
 private:
 
     bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username) {
-        if (strncmp(authz.c_str(), "Bearer ", 6)) {
+        if (strncmp(authz.c_str(), "Bearer%20", 9)) {
             return false;
         }
 
@@ -306,7 +308,8 @@ private:
             if (!(*cur_char >= 65 && *cur_char <= 90) && // uppercase letters
                 !(*cur_char >= 97 && *cur_char <= 122) && // lowercase letters
                 !(*cur_char >= 48 && *cur_char <= 57) && // numbers
-                (*cur_char != 43) && (*cur_char != 47))
+                (*cur_char != 43) && (*cur_char != 47) && // + and /
+                (*cur_char != 45) && (*cur_char != 95)) // - and _
             {
                 looks_good = false;
                 break;
@@ -319,18 +322,18 @@ private:
         char *err_msg;
         SciToken token = nullptr;
         pthread_rwlock_rdlock(&m_config_lock);
-        auto retval = scitoken_deserialize(authz.c_str() + 7, &token, &m_valid_issuers_array[0], &err_msg);
+        auto retval = scitoken_deserialize(authz.c_str() + 9, &token, &m_valid_issuers_array[0], &err_msg);
         pthread_rwlock_unlock(&m_config_lock);
         if (retval) {
             // This originally looked like a JWT so log the failure.
-            m_log.Emsg("GenerateAcls", "Failed to deserialize SciToken: ", err_msg);
+            m_log.Emsg("GenerateAcls", "Failed to deserialize SciToken:", err_msg);
             free(err_msg);
             return false;
         }
 
         long long expiry;
         if (scitoken_get_expiration(token, &expiry, &err_msg)) {
-            m_log.Emsg("GenerateAcls", "Unable to determine token expiration: ", err_msg);
+            m_log.Emsg("GenerateAcls", "Unable to determine token expiration:", err_msg);
             free(err_msg);
             scitoken_destroy(token);
             return false;
@@ -343,8 +346,8 @@ private:
         }
 
         char *value = nullptr;
-        if (scitoken_get_claim_string(token, "issuer", &value, &err_msg)) {
-            m_log.Emsg("GenerateAcls", "Failed to get issuer: ", err_msg);
+        if (scitoken_get_claim_string(token, "iss", &value, &err_msg)) {
+            m_log.Emsg("GenerateAcls", "Failed to get issuer:", err_msg);
             scitoken_destroy(token);
             free(err_msg);
             return false;
@@ -356,7 +359,7 @@ private:
         auto enf = enforcer_create(issuer.c_str(), &m_audiences_array[0], &err_msg);
         pthread_rwlock_unlock(&m_config_lock);
         if (!enf) {
-            m_log.Emsg("GenerateAcls", "Failed to create an enforcer: ", err_msg);
+            m_log.Emsg("GenerateAcls", "Failed to create an enforcer:", err_msg);
             scitoken_destroy(token);
             free(err_msg);
             return false;
@@ -366,7 +369,7 @@ private:
         if (enforcer_generate_acls(enf, token, &acls, &err_msg)) {
             scitoken_destroy(token);
             enforcer_destroy(enf);
-            m_log.Emsg("GenerateAcls", "ACL generation from SciToken failed: ", err_msg);
+            m_log.Emsg("GenerateAcls", "ACL generation from SciToken failed:", err_msg);
             free(err_msg);
             return false;
         }
@@ -386,7 +389,7 @@ private:
             value = nullptr;
             if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
                 pthread_rwlock_unlock(&m_config_lock);
-                m_log.Emsg("GenerateAcls", "Failed to get token subject: ", err_msg);
+                m_log.Emsg("GenerateAcls", "Failed to get token subject:", err_msg);
                 free(err_msg);
                 scitoken_destroy(token);
                 return false;
@@ -412,7 +415,8 @@ private:
                 if (!found_path) {continue;}
             }
             for (const auto &base_path : config.m_base_paths) {
-                auto path = base_path + "/" + acl_path;
+                if (!acl_path[0] || acl_path[0] != '/') {continue;}
+                auto path = base_path + acl_path;
                 if (!strcmp(acl_authz, "read")) {
                     xrd_rules.emplace_back(AOP_Read, path);
                     xrd_rules.emplace_back(AOP_Stat, path);
@@ -435,15 +439,39 @@ private:
     bool Reconfig()
     {
         errno = 0;
-        INIReader reader(m_parms);
+        std::string cfg_file("/etc/xrootd/scitokens.cfg");
+        if (!m_parms.empty()) {
+            size_t pos = 0;
+            std::vector<std::string> arg_list;
+            do {
+                while ((m_parms.size() > pos) && (m_parms[pos] == ' ')) {pos++;}
+                auto next_pos = m_parms.find_first_of(", ", pos);
+                auto next_arg = m_parms.substr(pos, next_pos - pos);
+                pos = next_pos;
+                if (!next_arg.empty()) {
+                    arg_list.emplace_back(std::move(next_arg));
+                }
+            } while (pos != std::string::npos);
+
+            for (const auto &arg : arg_list) {
+                if (strncmp(arg.c_str(), "config=", 7)) {
+                    m_log.Emsg("Reconfig", "Ignoring unknown configuration argument:", arg.c_str());
+                    continue;
+                }
+                cfg_file = std::string(arg.c_str() + 7);
+            }
+        }
+        m_log.Emsg("Reconfig", "Parsing configuration file:", cfg_file.c_str());
+
+        INIReader reader(cfg_file);
         if (reader.ParseError() < 0) {
             std::stringstream ss;
-            ss << "Error opening config file (" << m_parms << "): " << strerror(errno);
+            ss << "Error opening config file (" << cfg_file << "): " << strerror(errno);
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         } else if (reader.ParseError()) {
             std::stringstream ss;
-            ss << "Parse error on line " << reader.ParseError() << " of file " << m_parms;
+            ss << "Parse error on line " << reader.ParseError() << " of file " << cfg_file;
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         }
@@ -473,7 +501,7 @@ private:
                     picojson::value json_obj;
                     auto err = picojson::parse(json_obj, audience);
                     if (!err.empty()) {
-                        m_log.Emsg("Reconfig", "Unable to parse audience_json: ", err.c_str());
+                        m_log.Emsg("Reconfig", "Unable to parse audience_json:", err.c_str());
                         return false;
                     }
                     if (!json_obj.is<picojson::value::array>()) {
@@ -494,14 +522,14 @@ private:
 
             auto issuer = reader.Get(section, "issuer", "");
             if (issuer.empty()) {
-                m_log.Emsg("Reconfig", "Ignoring section because 'issuer' attribute is not set: ",
+                m_log.Emsg("Reconfig", "Ignoring section because 'issuer' attribute is not set:",
                      section.c_str());
                 continue;
             }
 
             auto base_path = reader.Get(section, "base_path", "");
             if (base_path.empty()) {
-                m_log.Emsg("Reconfig", "Ignoring section because 'base_path' attribute is not set: ",
+                m_log.Emsg("Reconfig", "Ignoring section because 'base_path' attribute is not set:",
                      section.c_str());
                 continue;
             }
@@ -511,7 +539,7 @@ private:
 
             auto name = section.substr(pos);
             if (name.empty()) {
-                m_log.Emsg("Reconfig", "Invalid section name: ", section.c_str());
+                m_log.Emsg("Reconfig", "Invalid section name:", section.c_str());
                 continue;
             }
 
@@ -532,6 +560,11 @@ private:
                             std::forward_as_tuple(name, issuer, base_paths, restricted_paths,
                                                   map_subject, default_user));
         }
+        if (issuers.empty()) {
+            m_log.Emsg("Reconfig", "No issuers configured.");
+            return false;
+        }
+
         pthread_rwlock_wrlock(&m_config_lock);
         try {
             m_audiences = std::move(audiences);
@@ -593,7 +626,11 @@ XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
                                        const char   *parm)
 {
     std::unique_ptr<XrdAccAuthorize> def_authz(XrdAccDefaultAuthorizeObject(lp, cfn, parm, compiledVer));
-    return new XrdAccSciTokens(lp, parm, std::move(def_authz));
+    try {
+        return new XrdAccSciTokens(lp, parm, std::move(def_authz));
+    } catch (std::exception &) {
+        return nullptr;
+    }
 }
 
 }
