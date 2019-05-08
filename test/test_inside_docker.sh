@@ -42,6 +42,9 @@ yum localinstall --enablerepo=osg-development -y $RPM_LOCATION/xrootd-scitokens-
 # Stand up a web server to server the public key
 yum -y install httpd mod_ssl xrootd-server
 
+# Need this for scitokens-admin-create-key
+yum -y install python2-scitokens
+
 # Create the public and private key
 scitokens-admin-create-key --create-keys --pem-private > private.pem
 mkdir /var/www/html/oauth2
