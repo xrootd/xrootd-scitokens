@@ -1,8 +1,0 @@
-[submodule "inih"]
-	path = vendor/inih
-	url = https://github.com/jtilly/inih.git
-        branch = master
-[submodule "picojson"]
-	path = vendor/picojson
-	url = https://github.com/kazuho/picojson.git
-	branch = master
