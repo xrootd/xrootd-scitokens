@@ -20,7 +20,7 @@ def main():
             backend=default_backend()
         )
         
-    token = scitokens.SciToken(key=private_key)
+    token = scitokens.SciToken(key=private_key, key_id="test-id")
     token["scope"] = "read:/"
     
     if 'aud' in args and args.aud is not None:
