@@ -93,7 +93,7 @@ echo "verify=disable" >> /etc/python/cert-verification.cfg
 NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
 echo $NEW_UUID > /tmp/random.txt
 
-py_output=$(python xrootd-scitokens/test/create-pubkey.py)
+py_output=$(python xrootd-scitokens/test/create-pubkey.py /var/www/html/oauth2/certs)
 
 if [ "$py_output" != "$NEW_UUID" ]; then
   exit 1
