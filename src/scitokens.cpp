@@ -402,6 +402,7 @@ private:
 
         AccessRulesRaw xrd_rules;
         int idx = 0;
+        m_log.Emsg("GenerateAcls", "Starting add of reads");
         while (acls[idx].resource && acls[idx++].authz) {
             const auto &acl_path = acls[idx-1].resource;
             const auto &acl_authz = acls[idx-1].authz;
@@ -419,6 +420,7 @@ private:
                 if (!acl_path[0] || acl_path[0] != '/') {continue;}
                 auto path = base_path + acl_path;
                 if (!strcmp(acl_authz, "read")) {
+                    m_log.Emsg("GenerateAcls", "Adding read of path:", path);
                     xrd_rules.emplace_back(AOP_Read, path);
                     xrd_rules.emplace_back(AOP_Stat, path);
                 } else if (!strcmp(acl_authz, "write")) {
