@@ -402,7 +402,6 @@ private:
 
         AccessRulesRaw xrd_rules;
         int idx = 0;
-        m_log.Emsg("GenerateAcls", "Starting add of reads");
         while (acls[idx].resource && acls[idx++].authz) {
             const auto &acl_path = acls[idx-1].resource;
             const auto &acl_authz = acls[idx-1].authz;
@@ -418,9 +417,9 @@ private:
             }
             for (const auto &base_path : config.m_base_paths) {
                 if (!acl_path[0] || acl_path[0] != '/') {continue;}
-                auto path = base_path + acl_path;
+                std::string path;
+                MakeCanonical(base_path + acl_path, path);
                 if (!strcmp(acl_authz, "read")) {
-                    m_log.Emsg("GenerateAcls", "Adding read of path:", path);
                     xrd_rules.emplace_back(AOP_Read, path);
                     xrd_rules.emplace_back(AOP_Stat, path);
                 } else if (!strcmp(acl_authz, "write")) {
@@ -582,6 +581,7 @@ private:
             m_valid_issuers.clear();
             m_valid_issuers.reserve(m_issuers.size());
             m_valid_issuers_array.reserve(m_issuers.size() + 1);
+            idx = 0;
             for (const auto &issuer : m_valid_issuers) {
                 m_valid_issuers_array[idx++] = issuer.c_str();
             }

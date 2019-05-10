@@ -99,7 +99,7 @@ if [ "$py_output" != "$NEW_UUID" ]; then
 fi
 
 # Test sending aud when there is no audience configured on the server
-if python xrootd-scitokens/test/create-pubkey.py --aud="testing.com"; then 
+if python xrootd-scitokens/test/create-pubkey.py --aud="testing.com" /var/www/html/oauth2/certs; then
   exit 1
 fi
 
@@ -111,14 +111,14 @@ systemctl restart xrootd@http.service
 NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
 echo $NEW_UUID > /tmp/random.txt
 
-py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com")
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com" /var/www/html/oauth2/certs)
 
 if [ "$py_output" != "$NEW_UUID" ]; then
   exit 1
 fi
 
 # Test sending no aud when an audience is configured
-if python xrootd-scitokens/test/create-pubkey.py; then
+if python xrootd-scitokens/test/create-pubkey.py /var/www/html/oauth2/certs; then
   exit 1
 fi
 
@@ -129,25 +129,25 @@ systemctl restart xrootd@http.service
 NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
 echo $NEW_UUID > /tmp/random.txt
 
-py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com")
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="testing.com" /var/www/html/oauth2/certs)
 
 if [ "$py_output" != "$NEW_UUID" ]; then
   exit 1
 fi
 
-py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="https://another.com")
+py_output=$(python xrootd-scitokens/test/create-pubkey.py --aud="https://another.com" /var/www/html/oauth2/certs)
 
 if [ "$py_output" != "$NEW_UUID" ]; then
   exit 1
 fi
 
 # Test sending no aud when an audience is configured
-if python xrootd-scitokens/test/create-pubkey.py; then 
+if python xrootd-scitokens/test/create-pubkey.py /var/www/html/oauth2/certs; then
   exit 1
 fi
 
 # Test sending wrong aud when an audience is configured
-if python xrootd-scitokens/test/create-pubkey.py --aud="wrong.com"; then
+if python xrootd-scitokens/test/create-pubkey.py --aud="wrong.com" /var/www/html/oauth2/certs; then
   exit 1
 fi
 
