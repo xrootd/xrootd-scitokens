@@ -60,6 +60,7 @@ EOF
 # Create the self signed x509 cert so we can use https (required by scitokens)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout localhost.key -out localhost.crt -config xrootd-scitokens/test/openssl-selfsigned.conf -subj '/CN=localhost/O=SciTokens/C=US'
 cp localhost.crt /etc/ssl/certs/localhost.crt
+cat localhost.crt >> /etc/ssl/certs/ca-bundle.crt
 mkdir -p /etc/ssl/private
 cp localhost.key /etc/ssl/private/localhost.key
 
@@ -86,8 +87,6 @@ cp xrootd-scitokens/test/config/override.conf /etc/systemd/system/xrootd@http.se
 
 systemctl daemon-reload
 systemctl restart xrootd@http.service
-
-echo "verify=disable" >> /etc/python/cert-verification.cfg
 
 # Generate a random file
 NEW_UUID=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
