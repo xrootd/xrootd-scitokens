@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 0.7.0
+Version: 1.0.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -48,6 +48,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Thu May 16 2019 Derek Weitzel <dweitzel@cse.unl.edu> - 1.0.0-1
+- Switch from the SciTokens Python API to the C API
+
 * Tue Oct 23 2018 Derek Weitzel <dweitzel@cse.unl.edu> - 0.6.0-1
 - Add support for audiences and multiple audience support
 
