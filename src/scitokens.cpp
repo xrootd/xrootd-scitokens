@@ -206,6 +206,13 @@ private:
 
 class XrdAccSciTokens : public XrdAccAuthorize
 {
+
+    enum class AuthzBehavior {
+        PASSTHROUGH,
+        ALLOW,
+        DENY
+    };
+
 public:
     XrdAccSciTokens(XrdSysLogger *lp, const char *parms, std::unique_ptr<XrdAccAuthorize> chain) :
         m_chain(std::move(chain)),
@@ -234,7 +241,7 @@ public:
     {
         const char *authz = env ? env->Get("authz") : nullptr;
         if (authz == nullptr) {
-            return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
+            return OnMissing(Entity, path, oper, env);
         }
         std::shared_ptr<XrdAccRules> access_rules;
         uint64_t now = monotonic_time();
@@ -255,11 +262,11 @@ public:
                     access_rules.reset(new XrdAccRules(now + cache_expiry, username));
                     access_rules->parse(rules);
                 } else {
-                    return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
+                    return OnMissing(Entity, path, oper, env);
                 }
             } catch (std::exception &exc) {
                 m_log.Emsg("Access", "Error generating ACLs for authorization", exc.what());
-                return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
+                return OnMissing(Entity, path, oper, env);
             }
             std::lock_guard<std::mutex> guard(m_mutex);
             m_map[authz] = access_rules;
@@ -269,7 +276,10 @@ public:
             const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
         }
         XrdAccPrivs result = access_rules->apply(oper, path);
-        return ((result == XrdAccPriv_None) && m_chain) ? m_chain->Access(Entity, path, oper, env) : result;
+        if (result != XrdAccPriv_None) {
+            return result;
+        }
+        return OnMissing(Entity, path, oper, env);
     }
 
     virtual int Audit(const int              accok,
@@ -288,6 +298,20 @@ public:
     }
 
 private:
+    XrdAccPrivs OnMissing(const XrdSecEntity *Entity, const char *path,
+                          const Access_Operation oper, XrdOucEnv *env)
+    {
+        switch (m_authz_behavior) {
+            case AuthzBehavior::PASSTHROUGH:
+                return m_chain ? m_chain->Access(Entity, path, oper, env) : XrdAccPriv_None;
+            case AuthzBehavior::ALLOW:
+                return AddPriv(oper, XrdAccPriv_None);
+            case AuthzBehavior::DENY:
+                return XrdAccPriv_None;
+        }
+        // Code should be unreachable.
+        return XrdAccPriv_None;
+    }
 
     bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username) {
         if (strncmp(authz.c_str(), "Bearer%20", 9)) {
@@ -518,6 +542,17 @@ private:
                         audiences.push_back(val.get<std::string>());
                     }
                 }
+                auto onmissing = reader.Get(section, "onmissing", "");
+                if (onmissing == "passthrough") {
+                    m_authz_behavior = AuthzBehavior::PASSTHROUGH;
+                } else if (onmissing == "allow") {
+                    m_authz_behavior = AuthzBehavior::ALLOW;
+                } else if (onmissing == "deny") {
+                    m_authz_behavior = AuthzBehavior::DENY;
+                } else if (!onmissing.empty()) {
+                    m_log.Emsg("Reconfig", "Unknown value for onmissing key:", onmissing.c_str());
+                    return false;
+                }
             }
 
             if (section_lower.substr(0, 7) != "issuer ") {continue;}
@@ -622,6 +657,7 @@ private:
     std::unordered_map<std::string, IssuerConfig> m_issuers;
     uint64_t m_next_clean{0};
     XrdSysError m_log;
+    AuthzBehavior m_authz_behavior{AuthzBehavior::PASSTHROUGH};
 
     static constexpr uint64_t m_expiry_secs = 60;
 };
