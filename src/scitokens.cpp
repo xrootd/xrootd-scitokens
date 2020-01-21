@@ -169,9 +169,10 @@ struct IssuerConfig
 class XrdAccRules
 {
 public:
-    XrdAccRules(uint64_t expiry_time, const std::string &username) :
+    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &issuer) :
         m_expiry_time(expiry_time),
-        m_username(username)
+        m_username(username),
+        m_issuer(issuer)
     {}
 
     ~XrdAccRules() {}
@@ -196,11 +197,13 @@ public:
     }
 
     const std::string & get_username() const {return m_username;}
+    const std::string & get_issuer() const {return m_issuer;}
 
 private:
     AccessRulesRaw m_rules;
     uint64_t m_expiry_time{0};
     const std::string m_username;
+    const std::string m_issuer;
 };
 
 
@@ -258,8 +261,9 @@ public:
 		uint64_t cache_expiry;
 		AccessRulesRaw rules;
                 std::string username;
-                if (GenerateAcls(authz, cache_expiry, rules, username)) {
-                    access_rules.reset(new XrdAccRules(now + cache_expiry, username));
+                std::string issuer;
+                if (GenerateAcls(authz, cache_expiry, rules, username, issuer)) {
+                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, issuer));
                     access_rules->parse(rules);
                 } else {
                     return OnMissing(Entity, path, oper, env);
@@ -274,6 +278,10 @@ public:
         const std::string &username = access_rules->get_username();
         if (!username.empty() && !Entity->name) {
             const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
+        }
+        const auto &issuer = access_rules->get_issuer();
+        if (!issuer.empty() && !Entity->vorg) {
+            const_cast<XrdSecEntity*>(Entity)->vorg = strdup(issuer.c_str());
         }
         XrdAccPrivs result = access_rules->apply(oper, path);
         if (result != XrdAccPriv_None) {
@@ -313,7 +321,7 @@ private:
         return XrdAccPriv_None;
     }
 
-    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username) {
+    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &issuer) {
         if (strncmp(authz.c_str(), "Bearer%20", 9)) {
             return false;
         }
@@ -376,11 +384,11 @@ private:
             free(err_msg);
             return false;
         }
-        std::string issuer(value);
+        std::string token_issuer(value);
         free(value);
 
         pthread_rwlock_rdlock(&m_config_lock);
-        auto enf = enforcer_create(issuer.c_str(), &m_audiences_array[0], &err_msg);
+        auto enf = enforcer_create(token_issuer.c_str(), &m_audiences_array[0], &err_msg);
         pthread_rwlock_unlock(&m_config_lock);
         if (!enf) {
             m_log.Emsg("GenerateAcls", "Failed to create an enforcer:", err_msg);
@@ -400,7 +408,7 @@ private:
         enforcer_destroy(enf);
 
         pthread_rwlock_rdlock(&m_config_lock);
-        auto iter = m_issuers.find(issuer);
+        auto iter = m_issuers.find(token_issuer);
         if (iter == m_issuers.end()) {
             pthread_rwlock_unlock(&m_config_lock);
             m_log.Emsg("GenerateAcls", "Authorized issuer without a config.");
@@ -458,6 +466,7 @@ private:
         cache_expiry = expiry;
         rules = std::move(xrd_rules);
         username = std::move(token_username);
+        issuer = std::move(token_issuer);
 
         return true;
     }
