@@ -177,14 +177,13 @@ public:
 
     ~XrdAccRules() {}
 
-    XrdAccPrivs apply(Access_Operation, std::string path) {
-        XrdAccPrivs privs = XrdAccPriv_None;
+    bool apply(Access_Operation oper, std::string path) {
         for (const auto & rule : m_rules) {
-            if (!path.compare(0, rule.second.size(), rule.second, 0, rule.second.size())) {
-                privs = AddPriv(rule.first, privs);
+            if ((oper == rule.first) && !path.compare(0, rule.second.size(), rule.second, 0, rule.second.size())) {
+                return true;
             }
         }
-        return privs;
+        return false;
     }
 
     bool expired() const {return monotonic_time() > m_expiry_time;}
@@ -283,11 +282,8 @@ public:
         if (!issuer.empty() && !Entity->vorg) {
             const_cast<XrdSecEntity*>(Entity)->vorg = strdup(issuer.c_str());
         }
-        XrdAccPrivs result = access_rules->apply(oper, path);
-        if (result != XrdAccPriv_None) {
-            return result;
-        }
-        return OnMissing(Entity, path, oper, env);
+        auto result = access_rules->apply(oper, path);
+        return result ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
     }
 
     virtual int Audit(const int              accok,
