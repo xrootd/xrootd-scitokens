@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 1.1.0
+Version: 1.2.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -48,6 +48,10 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Thu Mar 10 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.0-1
+- Add issuer for latter mapping decisions by issuer
+- Correct access control when allowing only reads
+
 * Thu Jan 16 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.1.0-1
 - Allow passthrough of the scitokens to other authz
 
