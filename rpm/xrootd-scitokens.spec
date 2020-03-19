@@ -9,6 +9,9 @@ URL: https://github.com/scitokens/xrootd-scitokens
 # git archive v%{version} --prefix=xrootd-scitokens-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-scitokens-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
+# Only on EL 7 and newer:
+Requires: gcc-c++ >= 4.8
+
 BuildRequires: gcc-c++
 BuildRequires: cmake
 BuildRequires: xrootd-server-devel
@@ -21,11 +24,6 @@ SciTokens authentication plugin for XRootD
 %setup -q
 
 %build
-%if 0%{?el6}
-echo "This package does not build on EL6."
-exit 1
-%endif
-
 mkdir build
 cd build
 %cmake ..
