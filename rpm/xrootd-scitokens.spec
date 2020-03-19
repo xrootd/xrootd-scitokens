@@ -21,6 +21,11 @@ SciTokens authentication plugin for XRootD
 %setup -q
 
 %build
+%if 0%{?el6}
+echo "This package does not build on EL6."
+exit 1
+%endif
+
 mkdir build
 cd build
 %cmake ..
