@@ -10,7 +10,7 @@ URL: https://github.com/scitokens/xrootd-scitokens
 Source0: %{name}-%{version}.tar.gz
 
 # Only on EL 7 and newer:
-Requires: gcc-c++ >= 4.8
+BuildRequires: gcc-c++ >= 4.8
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
