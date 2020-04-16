@@ -9,6 +9,9 @@ URL: https://github.com/scitokens/xrootd-scitokens
 # git archive v%{version} --prefix=xrootd-scitokens-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-scitokens-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
+# Only on EL 7 and newer:
+BuildRequires: gcc-c++ >= 4.8
+
 BuildRequires: gcc-c++
 BuildRequires: cmake
 BuildRequires: xrootd-server-devel
