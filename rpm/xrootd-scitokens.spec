@@ -46,12 +46,12 @@ rm -rf $RPM_BUILD_ROOT
 /sbin/ldconfig
 
 %files
-%{_libdir}/libXrdAccSciTokens-4.so
+%{_libdir}/libXrdAccSciTokens-*.so
 
 %defattr(-,root,root,-)
 
 %changelog
-* Thu Mar 10 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.0-1
+* Tue Mar 10 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.0-1
 - Add issuer for latter mapping decisions by issuer
 - Correct access control when allowing only reads
 
