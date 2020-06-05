@@ -7,6 +7,12 @@ set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
 find_package( Xrootd REQUIRED )
 find_package( SciTokensCpp REQUIRED )
 
+if(NOT XROOTD_PLUGIN_VERSION)
+  find_program(XROOTD_CONFIG_EXECUTABLE xrootd-config)
+  exec_program(${XROOTD_CONFIG_EXECUTABLE} ARGS "--plugin-version" OUTPUT_VARIABLE XROOTD_PLUGIN_VERSION RETURN_VALUE RETVAR)
+  set(XROOTD_PLUGIN_VERSION ${XROOTD_PLUGIN_VERSION} CACHE INTERNAL "")
+endif()
+
 macro(use_cxx11)
   if (CMAKE_VERSION VERSION_LESS "3.1")
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -28,7 +34,7 @@ include_directories(${SCITOKENS_CPP_INCLUDE_DIR} ${XROOTD_INCLUDES} vendor/picoj
 
 add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
 target_link_libraries(XrdAccSciTokens -ldl -lpthread ${SCITOKENS_CPP_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
-set_target_properties(XrdAccSciTokens PROPERTIES OUTPUT_NAME XrdAccSciTokens-4 SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
+set_target_properties(XrdAccSciTokens PROPERTIES OUTPUT_NAME XrdAccSciTokens-${XROOTD_PLUGIN_VERSION} SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${CMAKE_SOURCE_DIR}/configs/export-lib-symbols")
 
 SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for libraries")
 
