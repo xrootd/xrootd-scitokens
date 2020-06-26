@@ -78,14 +78,14 @@ rm -rf $RPM_BUILD_ROOT
 * Thu Jan 16 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.1.0-1
 - Allow passthrough of the scitokens to other authz
 
+* Wed Oct 23 2019 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-1.2
+- Rebuild against xrootd 4.11; add version range requirement (SOFTWARE-3830)
+
 * Thu Jul 18 2019 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-1.1
 - Rebuild against xrootd 4.10.0 (SOFTWARE-3697)
 
 * Thu May 16 2019 Derek Weitzel <dweitzel@cse.unl.edu> - 1.0.0-1
 - Switch from the SciTokens Python API to the C API
-
-* Wed Oct 23 2019 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-1.2
-- Rebuild against xrootd 4.11; add version range requirement (SOFTWARE-3830)
 
 * Tue Oct 23 2018 Derek Weitzel <dweitzel@cse.unl.edu> - 0.6.0-1
 - Add support for audiences and multiple audience support
