@@ -1,6 +1,6 @@
 Name: xrootd-scitokens
 Version: 1.2.0
-Release: 2%{?dist}
+Release: 7%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
 URL: https://github.com/scitokens/xrootd-scitokens
@@ -9,13 +9,20 @@ URL: https://github.com/scitokens/xrootd-scitokens
 # git archive v%{version} --prefix=xrootd-scitokens-%{version}/ | gzip -7 > ~/rpmbuild/SOURCES/xrootd-scitokens-%{version}.tar.gz
 Source0: %{name}-%{version}.tar.gz
 
+%define xrootd_current_major 4
+%define xrootd_next_major 5
+
 # Only on EL 7 and newer:
 BuildRequires: gcc-c++ >= 4.8
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
-BuildRequires: xrootd-server-devel
+BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-0
+BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-0
 BuildRequires: scitokens-cpp-devel
+
+Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-0
+Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-0
 
 %description
 SciTokens authentication plugin for XRootD
@@ -51,9 +58,18 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
-* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-2
+* Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-7
+- updating XRootD requirements to only the major version (SOFTWARE-4137)
+
+* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-6
 - Adding XrootD major version to the shared file name
 - building against XrootD-4.12.2 (software-4093)
+
+* Fri Apr 24 2020 Edgar Fajardo <emfajard@ucsd.edu> - 1.2.0-5
+- Rebuild against xrootd 4.11 (SOFTWARE-4063)
+
+* Thu Mar 18 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-2
+- Rebuild against xrootd 4.11; add version range requirement (SOFTWARE-3923)
 
 * Tue Mar 10 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.0-1
 - Add issuer for latter mapping decisions by issuer
@@ -61,6 +77,12 @@ rm -rf $RPM_BUILD_ROOT
 
 * Thu Jan 16 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.1.0-1
 - Allow passthrough of the scitokens to other authz
+
+* Wed Oct 23 2019 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-1.2
+- Rebuild against xrootd 4.11; add version range requirement (SOFTWARE-3830)
+
+* Thu Jul 18 2019 Carl Edquist <edquist@cs.wisc.edu> - 1.0.0-1.1
+- Rebuild against xrootd 4.10.0 (SOFTWARE-3697)
 
 * Thu May 16 2019 Derek Weitzel <dweitzel@cse.unl.edu> - 1.0.0-1
 - Switch from the SciTokens Python API to the C API
