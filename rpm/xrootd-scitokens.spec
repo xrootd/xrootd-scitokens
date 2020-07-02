@@ -1,6 +1,6 @@
 Name: xrootd-scitokens
-Version: 1.2.0
-Release: 7%{?dist}
+Version: 1.2.1
+Release: 2%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
 URL: https://github.com/scitokens/xrootd-scitokens
@@ -17,12 +17,12 @@ BuildRequires: gcc-c++ >= 4.8
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
-BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-0
-BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-0
+BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-1
+BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-1
 BuildRequires: scitokens-cpp-devel
 
-Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-0
-Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-0
+Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-1
+Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-1
 
 %description
 SciTokens authentication plugin for XRootD
@@ -58,10 +58,10 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
-* Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-7
+* Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 1.2.1-2
 - updating XRootD requirements to only the major version (SOFTWARE-4137)
 
-* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 1.2.0-6
+* Wed Jun 10 2020 Diego Davila <didavila@ucsd.edu> - 1.2.1-1
 - Adding XrootD major version to the shared file name
 - building against XrootD-4.12.2 (software-4093)
 
