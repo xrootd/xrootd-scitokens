@@ -1,6 +1,6 @@
 Name: xrootd-scitokens
 Version: 1.2.1
-Release: 2%{?dist}
+Release: 3%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
 URL: https://github.com/scitokens/xrootd-scitokens
@@ -10,6 +10,7 @@ URL: https://github.com/scitokens/xrootd-scitokens
 Source0: %{name}-%{version}.tar.gz
 
 %define xrootd_current_major 4
+%define xrootd_current_minor 12
 %define xrootd_next_major 5
 
 # Only on EL 7 and newer:
@@ -17,11 +18,11 @@ BuildRequires: gcc-c++ >= 4.8
 
 BuildRequires: gcc-c++
 BuildRequires: cmake
-BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}.0.0-1
-BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}.0.0-1
+BuildRequires: xrootd-server-devel >= 1:%{xrootd_current_major}
+BuildRequires: xrootd-server-devel <  1:%{xrootd_next_major}
 BuildRequires: scitokens-cpp-devel
 
-Requires: xrootd-server >= 1:%{xrootd_current_major}.0.0-1
+Requires: xrootd-server >= 1:%{xrootd_current_major}.%{xrootd_current_minor}
 Requires: xrootd-server <  1:%{xrootd_next_major}.0.0-1
 
 %description
@@ -58,6 +59,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Tue Jul 14 2020 Diego Davila <didavila@ucsd.edu> - 1.2.1-3
+- updating XRootD adding minor version to requirements (SOFTWARE-4137)
+
 * Fri Jun 26 2020 Diego Davila <didavila@ucsd.edu> - 1.2.1-2
 - updating XRootD requirements to only the major version (SOFTWARE-4137)
 
