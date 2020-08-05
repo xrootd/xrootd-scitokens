@@ -618,12 +618,10 @@ private:
             m_audiences_array[idx] = nullptr;
 
             m_issuers = std::move(issuers);
-            m_valid_issuers.clear();
-            m_valid_issuers.reserve(m_issuers.size());
             m_valid_issuers_array.resize(m_issuers.size() + 1);
             idx = 0;
-            for (const auto &issuer : m_valid_issuers) {
-                m_valid_issuers_array[idx++] = issuer.c_str();
+            for (const auto &issuer : m_issuers) {
+                m_valid_issuers_array[idx++] = issuer.first.c_str();
             }
             m_valid_issuers_array[idx] = nullptr;
         } catch (...) {
@@ -657,7 +655,6 @@ private:
     std::map<std::string, std::shared_ptr<XrdAccRules>> m_map;
     std::unique_ptr<XrdAccAuthorize> m_chain;
     const std::string m_parms;
-    std::vector<std::string> m_valid_issuers;
     std::vector<const char*> m_valid_issuers_array;
     std::unordered_map<std::string, IssuerConfig> m_issuers;
     uint64_t m_next_clean{0};
