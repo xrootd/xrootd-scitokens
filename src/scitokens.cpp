@@ -611,7 +611,7 @@ private:
         try {
             m_audiences = std::move(audiences);
             size_t idx = 0;
-            m_audiences_array.reserve(m_audiences.size() + 1);
+            m_audiences_array.resize(m_audiences.size() + 1);
             for (const auto &audience : m_audiences) {
                 m_audiences_array[idx++] = audience.c_str();
             }
@@ -620,7 +620,7 @@ private:
             m_issuers = std::move(issuers);
             m_valid_issuers.clear();
             m_valid_issuers.reserve(m_issuers.size());
-            m_valid_issuers_array.reserve(m_issuers.size() + 1);
+            m_valid_issuers_array.resize(m_issuers.size() + 1);
             idx = 0;
             for (const auto &issuer : m_valid_issuers) {
                 m_valid_issuers_array[idx++] = issuer.c_str();
