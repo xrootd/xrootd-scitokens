@@ -1,6 +1,6 @@
 Name: xrootd-scitokens
-Version: 1.2.1
-Release: 3%{?dist}
+Version: 1.2.2
+Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
 URL: https://github.com/scitokens/xrootd-scitokens
@@ -59,6 +59,10 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Wed Aug 06 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.2-1
+- Fix behavior difference between el7 and el8 #30
+- Set allowed_issuers in the JWT deserialize #31
+
 * Tue Jul 14 2020 Diego Davila <didavila@ucsd.edu> - 1.2.1-3
 - updating XRootD adding minor version to requirements (SOFTWARE-4137)
 
