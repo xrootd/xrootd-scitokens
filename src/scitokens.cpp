@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <fstream>
 #include <unordered_map>
 #include <tuple>
 
@@ -139,6 +140,50 @@ void ParseCanonicalPaths(const std::string &path, std::vector<std::string> &resu
     } while (pos != std::string::npos);
 }
 
+struct MapRule
+{
+    MapRule(const std::string &sub,
+            const std::string &path_prefix,
+            const std::string &group,
+            const std::string &name)
+        : m_sub(sub),
+          m_path_prefix(path_prefix),
+          m_group(group),
+          m_name(name)
+    {
+        //std::cerr << "Making a rule {sub=" << sub << ", path=" << path_prefix << ", group=" << group << ", result=" << name << "}" << std::endl;
+    }
+
+    const std::string match(const std::string sub,
+                              const std::string req_path,
+                              const std::vector<std::string> groups) const
+    {
+        if (!m_sub.empty() && sub != m_sub) {return "";}
+
+        //std::cerr << "Comparing requested path " << req_path << " against registered path preffix " << m_path_prefix << std::endl;
+
+        if (!m_path_prefix.empty() &&
+            strncmp(req_path.c_str(), m_path_prefix.c_str(), m_path_prefix.size()))
+        {
+            return "";
+        }
+
+        if (!m_group.empty()) {
+            for (const auto &group : groups) {
+                if (group == m_group)
+                    return m_name;
+            }
+            return "";
+        }
+        return m_name;
+    }
+
+    std::string m_sub;
+    std::string m_path_prefix;
+    std::string m_group;
+    std::string m_name;
+};
+
 struct IssuerConfig
 {
     IssuerConfig(const std::string &issuer_name,
@@ -146,13 +191,15 @@ struct IssuerConfig
                  const std::vector<std::string> &base_paths,
                  const std::vector<std::string> &restricted_paths,
                  bool map_subject,
-                 const std::string &default_user)
+                 const std::string &default_user,
+                 const std::vector<MapRule> rules)
         : m_map_subject(map_subject),
           m_name(issuer_name),
           m_url(issuer_url),
           m_default_user(default_user),
           m_base_paths(base_paths),
-          m_restricted_paths(restricted_paths)
+          m_restricted_paths(restricted_paths),
+          m_map_rules(rules)
     {}
 
     const bool m_map_subject;
@@ -161,6 +208,7 @@ struct IssuerConfig
     const std::string m_default_user;
     const std::vector<std::string> m_base_paths;
     const std::vector<std::string> m_restricted_paths;
+    const std::vector<MapRule> m_map_rules;
 };
 
 }
@@ -169,10 +217,12 @@ struct IssuerConfig
 class XrdAccRules
 {
 public:
-    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &issuer) :
+    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &token_username, const std::string &issuer, std::vector<MapRule> rules) :
         m_expiry_time(expiry_time),
         m_username(username),
-        m_issuer(issuer)
+        m_token_username(token_username),
+        m_issuer(issuer),
+        m_map_rules(rules)
     {}
 
     ~XrdAccRules() {}
@@ -195,14 +245,27 @@ public:
         }
     }
 
-    const std::string & get_username() const {return m_username;}
+    std::string get_username(const std::string &req_path)
+    {
+        for (const auto &rule : m_map_rules) {
+            std::string name = rule.match(m_token_username, req_path, {});
+            if (!name.empty()) {
+                return name;
+            }
+        }
+        return get_default_username();
+    }
+
+    const std::string & get_default_username() const {return m_username;}
     const std::string & get_issuer() const {return m_issuer;}
 
 private:
     AccessRulesRaw m_rules;
     uint64_t m_expiry_time{0};
     const std::string m_username;
+    const std::string m_token_username;
     const std::string m_issuer;
+    const std::vector<MapRule> m_map_rules;
 };
 
 
@@ -260,9 +323,11 @@ public:
 		uint64_t cache_expiry;
 		AccessRulesRaw rules;
                 std::string username;
+                std::string token_username;
                 std::string issuer;
-                if (GenerateAcls(authz, cache_expiry, rules, username, issuer)) {
-                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, issuer));
+                std::vector<MapRule> map_rules;
+                if (GenerateAcls(authz, cache_expiry, rules, username, token_username, issuer, map_rules)) {
+                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, token_username, issuer, map_rules));
                     access_rules->parse(rules);
                 } else {
                     return OnMissing(Entity, path, oper, env);
@@ -274,7 +339,7 @@ public:
             std::lock_guard<std::mutex> guard(m_mutex);
             m_map[authz] = access_rules;
         }
-        const std::string &username = access_rules->get_username();
+        const std::string &username = access_rules->get_username(path);
         if (!username.empty() && !Entity->name) {
             const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
         }
@@ -317,7 +382,7 @@ private:
         return XrdAccPriv_None;
     }
 
-    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &issuer) {
+    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &token_username, std::string &issuer, std::vector<MapRule> &map_rules) {
         if (strncmp(authz.c_str(), "Bearer%20", 9)) {
             return false;
         }
@@ -412,20 +477,29 @@ private:
             return false;
         }
         const auto &config = iter->second;
-        std::string token_username;
+        value = nullptr;
+        if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
+            pthread_rwlock_unlock(&m_config_lock);
+            m_log.Emsg("GenerateAcls", "Failed to get token subject:", err_msg);
+            free(err_msg);
+            scitoken_destroy(token);
+            return false;
+        }
+        token_username = std::string(value);
+        free(value);
+
         if (config.m_map_subject) {
-            value = nullptr;
-            if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
-                pthread_rwlock_unlock(&m_config_lock);
-                m_log.Emsg("GenerateAcls", "Failed to get token subject:", err_msg);
-                free(err_msg);
-                scitoken_destroy(token);
-                return false;
-            }
-            token_username = std::string(value);
-            free(value);
+            username = token_username;
         } else {
-            token_username = config.m_default_user;
+            username = config.m_default_user;
+        }
+
+        for (auto rule : config.m_map_rules) {
+            for (auto path : config.m_base_paths) {
+                auto path_rule = rule;
+                path_rule.m_path_prefix = path + rule.m_path_prefix;
+                map_rules.emplace_back(path_rule);
+            }
         }
 
         AccessRulesRaw xrd_rules;
@@ -461,8 +535,81 @@ private:
 
         cache_expiry = expiry;
         rules = std::move(xrd_rules);
-        username = std::move(token_username);
+        username = std::move(username);
         issuer = std::move(token_issuer);
+
+        return true;
+    }
+
+    bool ParseMapfile(const std::string &filename, std::vector<MapRule> &rules)
+    {
+        std::stringstream ss;
+        std::ifstream mapfile(filename);
+        if (!mapfile.is_open())
+        {
+            ss << "Error opening mapfile (" << filename << "): " << strerror(errno);
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        picojson::value val;
+        auto err = picojson::parse(val, mapfile);
+        if (!err.empty()) {
+            ss << "Unable to parse mapfile (" << filename << ") as json: " << err;
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        if (!val.is<picojson::array>()) {
+            ss << "Top-level element of the mapfile " << filename << " must be a list";
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        const auto& rule_list = val.get<picojson::array>();
+        for (const auto &rule : rule_list)
+        {
+            if (!rule.is<picojson::object>()) {
+                ss << "Mapfile " << filename << " must be a list of JSON objects; found non-object";
+                m_log.Emsg("ParseMapfile", ss.str().c_str());
+                return false;
+            }
+            std::string path;
+            std::string group;
+            std::string sub;
+            std::string result;
+            for (const auto &entry : rule.get<picojson::object>()) {
+                if (!entry.second.is<std::string>()) {
+                    if (entry.first != "result" && entry.first != "group" && entry.first != "sub" && entry.first != "path") {continue;}
+                    ss << "In mapfile " << filename << ", rule entry for " << entry.first << " has non-string value";
+                    m_log.Emsg("ParseMapfile", ss.str().c_str());
+                    return false;
+                }
+                if (entry.first == "result") {
+                    result = entry.second.get<std::string>();
+                }
+                else if (entry.first == "group") {
+                    group = entry.second.get<std::string>();
+                }
+                else if (entry.first == "sub") {
+                    sub = entry.second.get<std::string>();
+                }
+                else if (entry.first == "path") {
+                    std::string norm_path;
+                    if (!MakeCanonical(entry.second.get<std::string>(), norm_path)) {
+                        ss << "In mapfile " << filename << " encountered a path " << entry.second.get<std::string>()
+                           << " that cannot be normalized";
+                        m_log.Emsg("ParseMapfile", ss.str().c_str());
+                        return false;
+                    }
+                    path = norm_path;
+                }
+            }
+            if (result.empty())
+            {
+                ss << "In mapfile " << filename << " encountered a rule without a 'result' attribute";
+                m_log.Emsg("ParseMapfile", ss.str().c_str());
+                return false;
+            }
+            rules.emplace_back(sub, path, group, result);
+        }
 
         return true;
     }
@@ -569,6 +716,17 @@ private:
                 continue;
             }
 
+            std::vector<MapRule> rules;
+            auto name_mapfile = reader.Get(section, "name_mapfile", "");
+            if (!name_mapfile.empty()) {
+                if (!ParseMapfile(name_mapfile, rules)) {
+                    m_log.Emsg("Reconfig", "Failed to parse mapfile; failing (re-)configuration", name_mapfile.c_str());
+                    return false;
+                } else {
+                    m_log.Emsg("Reconfig", "Successfully parsed SciTokens mapfile:", name_mapfile.c_str());
+                }
+            }
+
             auto base_path = reader.Get(section, "base_path", "");
             if (base_path.empty()) {
                 m_log.Emsg("Reconfig", "Ignoring section because 'base_path' attribute is not set:",
@@ -600,7 +758,7 @@ private:
             issuers.emplace(std::piecewise_construct,
                             std::forward_as_tuple(issuer),
                             std::forward_as_tuple(name, issuer, base_paths, restricted_paths,
-                                                  map_subject, default_user));
+                                                  map_subject, default_user, rules));
         }
         if (issuers.empty()) {
             m_log.Emsg("Reconfig", "No issuers configured.");
