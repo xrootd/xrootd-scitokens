@@ -108,8 +108,9 @@ It must parse as valid JSON and may look like this:
 
 [
    {"sub": "bbockelm",    "path": "/home/bbockelm", "result": "bbockelm"},
-   {"group": "/cms/prod", "path": "/cms",           "result": "cmsprod"},
-   {"group": "/cms",                                "result": "cmsuser"}
+   {"group": "/cms/prod", "path": "/cms",           "result": "cmsprod" comment="Added 1 Sept 2020"},
+   {"group": "/cms",                                "result": "cmsuser"},
+   {"group": "/cms",                                "result": "atlas"   ignore="Only for testing"}
 ]
 
 That is, we have a JSON list of objects; each object is interpreted as a rule.  For an incoming request to match a rule,
@@ -123,5 +124,7 @@ The enumerated keys are:
      the rule is `/bbockelm`, then this attribute evaluates to `true`.  Note the path value and the requested path must
      be normalized; if presented with `/home//bockelm/`, then this is treated as if `/home/bbockelm` was given.
    - `group`: Case-sensitive match against one of the groups in the token.
+   - `ignore`: If present (regardless of the value), the rule is ignored.
+   - `comment`: Ignored; reserved for adding comments from the administrator.
 
 Unknown keys are ignored.

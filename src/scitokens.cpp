@@ -160,8 +160,6 @@ struct MapRule
     {
         if (!m_sub.empty() && sub != m_sub) {return "";}
 
-        //std::cerr << "Comparing requested path " << req_path << " against registered path preffix " << m_path_prefix << std::endl;
-
         if (!m_path_prefix.empty() &&
             strncmp(req_path.c_str(), m_path_prefix.c_str(), m_path_prefix.size()))
         {
@@ -643,6 +641,7 @@ private:
             std::string group;
             std::string sub;
             std::string result;
+            bool ignore = false;
             for (const auto &entry : rule.get<picojson::object>()) {
                 if (!entry.second.is<std::string>()) {
                     if (entry.first != "result" && entry.first != "group" && entry.first != "sub" && entry.first != "path") {continue;}
@@ -668,8 +667,12 @@ private:
                         return false;
                     }
                     path = norm_path;
+                } else if (entry.first == "ignore") {
+                    ignore = true;
+                    break;
                 }
             }
+            if (ignore) continue;
             if (result.empty())
             {
                 ss << "In mapfile " << filename << " encountered a rule without a 'result' attribute";
