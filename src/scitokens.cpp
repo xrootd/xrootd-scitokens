@@ -217,12 +217,14 @@ struct IssuerConfig
 class XrdAccRules
 {
 public:
-    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &token_username, const std::string &issuer, std::vector<MapRule> rules) :
+    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &token_username,
+        const std::string &issuer, const std::vector<MapRule> &rules, const std::vector<std::string> &groups) :
         m_expiry_time(expiry_time),
         m_username(username),
         m_token_username(token_username),
         m_issuer(issuer),
-        m_map_rules(rules)
+        m_map_rules(rules),
+        m_groups(groups)
     {}
 
     ~XrdAccRules() {}
@@ -248,16 +250,19 @@ public:
     std::string get_username(const std::string &req_path)
     {
         for (const auto &rule : m_map_rules) {
-            std::string name = rule.match(m_token_username, req_path, {});
+            std::string name = rule.match(m_token_username, req_path, m_groups);
             if (!name.empty()) {
                 return name;
             }
         }
-        return get_default_username();
+        return "";
     }
 
     const std::string & get_default_username() const {return m_username;}
     const std::string & get_issuer() const {return m_issuer;}
+
+    size_t size() const {return m_rules.size();}
+    const std::vector<std::string> &groups() const {return m_groups;}
 
 private:
     AccessRulesRaw m_rules;
@@ -266,6 +271,7 @@ private:
     const std::string m_token_username;
     const std::string m_issuer;
     const std::vector<MapRule> m_map_rules;
+    const std::vector<std::string> m_groups;
 };
 
 
@@ -326,8 +332,9 @@ public:
                 std::string token_username;
                 std::string issuer;
                 std::vector<MapRule> map_rules;
-                if (GenerateAcls(authz, cache_expiry, rules, username, token_username, issuer, map_rules)) {
-                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, token_username, issuer, map_rules));
+                std::vector<std::string> groups;
+                if (GenerateAcls(authz, cache_expiry, rules, username, token_username, issuer, map_rules, groups)) {
+                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, token_username, issuer, map_rules, groups));
                     access_rules->parse(rules);
                 } else {
                     return OnMissing(Entity, path, oper, env);
@@ -339,16 +346,62 @@ public:
             std::lock_guard<std::mutex> guard(m_mutex);
             m_map[authz] = access_rules;
         }
-        const std::string &username = access_rules->get_username(path);
-        if (!username.empty() && !Entity->name) {
-            const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
-        }
+
+        // Strategy: we populate the name in the XrdSecEntity if:
+        //    1. There are scopes present in the token that authorize the request,
+        //    2. The token is mapped by some rule in the mapfile (group or subject-based mapping).
+        // The default username for the issuer is only used in (1).
+        // If the scope-based mapping is successful, authorize immediately.  Otherwise, if the
+        // mapping is successful, we potentially chain to another plugin.
+        //
+        // We always populate the issuer and the groups, if present.
+
+        // Access may be authorized; populate XrdSecEntity
+        auto mutable_entity = const_cast<XrdSecEntity*>(Entity);
+        free(mutable_entity->vorg); mutable_entity->vorg = nullptr;
+        free(mutable_entity->grps); mutable_entity->grps = nullptr;
+        free(mutable_entity->role); mutable_entity->role = nullptr;
         const auto &issuer = access_rules->get_issuer();
-        if (!issuer.empty() && !Entity->vorg) {
-            const_cast<XrdSecEntity*>(Entity)->vorg = strdup(issuer.c_str());
+        if (!issuer.empty()) {
+            mutable_entity->vorg = strdup(issuer.c_str());
         }
-        auto result = access_rules->apply(oper, path);
-        return result ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
+        if (access_rules->groups().size()) {
+            std::stringstream ss;
+            for (const auto &grp : access_rules->groups()) {
+                ss << grp << " ";
+            }
+            const auto &groups_str = ss.str();
+            mutable_entity->grps = static_cast<char*>(malloc(groups_str.size()));
+            if (mutable_entity->grps) {
+                memcpy(mutable_entity->grps, groups_str.c_str(), groups_str.size());
+                mutable_entity->grps[groups_str.size()] = '\0';
+            }
+        }
+
+        std::string username;
+        bool mapping_success = false;
+        bool scope_success = false;
+        username = access_rules->get_username(path);
+
+        mapping_success = !username.empty();
+        scope_success = access_rules->apply(oper, path);
+
+        if (!scope_success && !mapping_success) {
+            return  OnMissing(Entity, path, oper, env);
+        }
+
+        // Default user only applies to scope-based mappings.
+        if (!mapping_success && scope_success) {
+            mapping_success = !(username = access_rules->get_default_username()).empty();
+        }
+
+        if (mapping_success) {
+            free(mutable_entity->name);
+            mutable_entity->name = strdup(username.c_str());
+        }
+
+        // When the scope authorized this access, allow immediately.  Otherwise, chain
+        return scope_success ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
     }
 
     virtual int Audit(const int              accok,
@@ -382,7 +435,7 @@ private:
         return XrdAccPriv_None;
     }
 
-    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &token_username, std::string &issuer, std::vector<MapRule> &map_rules) {
+    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &token_username, std::string &issuer, std::vector<MapRule> &map_rules, std::vector<std::string> &groups) {
         if (strncmp(authz.c_str(), "Bearer%20", 9)) {
             return false;
         }
@@ -468,6 +521,20 @@ private:
         }
         enforcer_destroy(enf);
 
+        char **group_list;
+        std::vector<std::string> groups_parsed;
+        if (!scitoken_get_claim_string_list(token, "wlcg.groups", &group_list, &err_msg)) {
+            for (int idx=0; group_list[idx]; idx++) {
+                groups_parsed.emplace_back(group_list[idx]);
+            }
+            scitoken_free_string_list(group_list);
+        } else {
+            // For now, we silently ignore errors.
+            // std::cerr << "Failed to get groups: " << err_msg << std::endl;
+            free(err_msg);
+        }
+
+
         pthread_rwlock_rdlock(&m_config_lock);
         auto iter = m_issuers.find(token_issuer);
         if (iter == m_issuers.end()) {
@@ -537,6 +604,7 @@ private:
         rules = std::move(xrd_rules);
         username = std::move(username);
         issuer = std::move(token_issuer);
+        groups = std::move(groups_parsed);
 
         return true;
     }
