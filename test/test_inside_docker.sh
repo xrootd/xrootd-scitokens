@@ -11,7 +11,7 @@ rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-${OS_VERSION}
 
 yum -y install yum-plugin-priorities rpm-build gcc gcc-c++ boost-devel boost-python cmake git tar gzip make autotools python-devel
 
-rpm -Uvh https://repo.opensciencegrid.org/osg/3.4/osg-3.4-el${OS_VERSION}-release-latest.rpm
+rpm -Uvh https://repo.opensciencegrid.org/osg/3.5/osg-3.5-el${OS_VERSION}-release-latest.rpm
 
 yum -y install xrootd-server-devel
 yum -y install --enablerepo=osg-development scitokens-cpp-devel
