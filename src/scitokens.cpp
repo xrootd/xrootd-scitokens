@@ -453,6 +453,12 @@ private:
                 } else if (!strcmp(acl_authz, "write")) {
                     xrd_rules.emplace_back(AOP_Update, path);
                     xrd_rules.emplace_back(AOP_Create, path);
+                    xrd_rules.emplace_back(AOP_Mkdir, path);
+                    xrd_rules.emplace_back(AOP_Chmod, path);
+                    xrd_rules.emplace_back(AOP_Delete, path);
+                    xrd_rules.emplace_back(AOP_Insert, path);
+                    xrd_rules.emplace_back(AOP_Rename, path);
+                    xrd_rules.emplace_back(AOP_Update, path);
                 }
             }
         }
