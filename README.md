@@ -122,7 +122,7 @@ The enumerated keys are:
    - `path`: True iff the value of the attribute matches (case-sensitive) the prefix of the (normalized) requested path.
      For example, if the issuer's base path is `/home`, the operation is accessing `/home/bbockelm/foo`, and the path in
      the rule is `/bbockelm`, then this attribute evaluates to `true`.  Note the path value and the requested path must
-     be normalized; if presented with `/home//bockelm/`, then this is treated as if `/home/bbockelm` was given.
+     be normalized; if presented with `/home//bbockelm/`, then this is treated as if `/home/bbockelm` was given.
    - `group`: Case-sensitive match against one of the groups in the token.
    - `ignore`: If present (regardless of the value), the rule is ignored.
    - `comment`: Ignored; reserved for adding comments from the administrator.
