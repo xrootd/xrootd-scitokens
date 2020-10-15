@@ -3,6 +3,7 @@ cmake_minimum_required( VERSION 2.8 )
 project( xrootd-scitokens )
 
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
+include(GNUInstallDirs)
 
 find_package( Xrootd REQUIRED )
 find_package( SciTokensCpp REQUIRED )
