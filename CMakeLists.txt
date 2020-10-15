@@ -3,6 +3,7 @@ cmake_minimum_required( VERSION 2.8 )
 project( xrootd-scitokens )
 
 set( CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake )
+include(GNUInstallDirs)
 
 find_package( Xrootd REQUIRED )
 find_package( SciTokensCpp REQUIRED )
@@ -40,4 +41,4 @@ SET(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib" CACHE PATH "Install path for l
 
 install(
   TARGETS XrdAccSciTokens
-  LIBRARY DESTINATION ${LIB_INSTALL_DIR})
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
