@@ -160,8 +160,7 @@ inline static char* find_chars_or_comment(const char* s, const char* chars)
 /* Version of strncpy that ensures dest (size bytes) is null-terminated. */
 inline static char* strncpy0(char* dest, const char* src, size_t size)
 {
-    strncpy(dest, src, size);
-    dest[size - 1] = '\0';
+    snprintf(dest, size, "%s", src);
     return dest;
 }
 
