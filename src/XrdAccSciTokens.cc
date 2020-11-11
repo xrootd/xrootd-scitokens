@@ -765,6 +765,8 @@ XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
     // unique_ptr as all of this happens once in the main and only thread.
     //
 
+    // Create a logging platform to send error messages
+    XrdSysError xrootdLog(lp, "scitokens_");
     // If we have been initialized by via InitViaZTN() then all we need to check
     // is that the config file passed here is the same one passed via the ZTN.
     // If it isn't, issue a nasty message and return a nil pointer.
@@ -772,13 +774,19 @@ XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
     if (accSciTokens)  // Already initialzed?
     {
         // Verify sameness of config file
-        return (accSciTokens->GetConfigFile() == cfn ? accSciTokens : nullptr);
+        if (accSciTokens->GetConfigFile() == cfn) {
+            return accSciTokens;
+        } else {
+            xrootdLog.Emsg("XrdAccAuthorizeObjectAdd", "SciTokens configuration is different now from the scitokens configuration when initialized");
+            return nullptr;
+        }
     }
 
     // First time through, get a new SciTokens authorizer. We simply reuse the
     // InitViaZTN() method as that is all we need.
     //
-    return (XrdAccSciTokens::InitViaZTN(lp, cfn, parm, accP) ? accSciTokens : nullptr);
+    accSciTokens = (XrdAccSciTokens*)XrdAccSciTokens::InitViaZTN(lp, cfn, parm, accP);
+    return (accSciTokens ? accSciTokens : nullptr);
 }
 
 

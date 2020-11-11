@@ -12,6 +12,8 @@ public:
 //! @param   lp    - Pointer to the error logging object.
 //! @param   cfn   - Pointer to the configuration file used by xrootd.
 //! @param   parm  - Pointer to the plugin library parameters.
+//! @param   accP  - Pointer to the authorization object, but should be null 
+//!                  when initialized with this function.
 //!
 //! @result  Pointer to an instance of this object upon success, nil otherwise.
 //-----------------------------------------------------------------------------
@@ -19,13 +21,16 @@ public:
 static XrdSciTokensHelper *InitViaZTN(XrdSysLogger *lp,
                                       const char   *cfn,
                                       const char   *parm,
-                                      XrdAccAuthorize *accP
+                                      XrdAccAuthorize *accP = 0
                                       );
 
 //-----------------------------------------------------------------------------
 //! Get the list of valid issuers.
 //!
-//! @result  A vector of valid issuers.
+//! @result  A vector of valid issuers.  The list of issuers never changes.
+//!          Only a reconfig of the scitokens plugin could cause the issuer
+//!          list to change, which right now only happens in plugin 
+//!          initialization.
 //-----------------------------------------------------------------------------
 
 struct   ValidIssuer
