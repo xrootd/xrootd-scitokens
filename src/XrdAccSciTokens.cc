@@ -20,8 +20,6 @@
 #include "scitokens/scitokens.h"
 #include "XrdSciTokensHelper.hh"
 
-XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
-
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
 static XrdVERSIONINFODEF(compiledVer, XrdAccTest, XrdVNUMBER, XrdVERSION);
@@ -743,18 +741,6 @@ private:
 std::string      cfgSciTokens;
 
 extern "C" {
-
-XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
-                                       const char   *cfn,
-                                       const char   *parm)
-{
-    std::unique_ptr<XrdAccAuthorize> def_authz(XrdAccDefaultAuthorizeObject(lp, cfn, parm, compiledVer));
-    try {
-        return new XrdAccSciTokens(lp, parm, std::move(def_authz));
-    } catch (std::exception &) {
-        return nullptr;
-    }
-}
 
 XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
                                           const char   *cfn,
