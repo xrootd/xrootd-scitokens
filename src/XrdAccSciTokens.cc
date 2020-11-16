@@ -18,8 +18,7 @@
 #include "picojson.h"
 
 #include "scitokens/scitokens.h"
-
-XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
+#include "XrdSciTokensHelper.hh"
 
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
@@ -205,8 +204,11 @@ private:
     const std::string m_issuer;
 };
 
+class XrdAccSciTokens;
 
-class XrdAccSciTokens : public XrdAccAuthorize
+XrdAccSciTokens *accSciTokens = nullptr;
+
+class XrdAccSciTokens : public XrdAccAuthorize, public XrdSciTokensHelper
 {
 
     enum class AuthzBehavior {
@@ -286,6 +288,52 @@ public:
         return result ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
     }
 
+    virtual  Issuers IssuerList() override
+    {
+        /*
+        Convert the m_issuers into the data structure:
+        struct   ValidIssuer
+        {std::string issuer_name;
+         std::string issuer_url;
+        };
+        typedef std::vector<ValidIssuer> Issuers;
+        */
+        Issuers issuers;
+        for (auto it: m_issuers) {
+            ValidIssuer issuer_info;
+            issuer_info.issuer_name = it.first;
+            issuer_info.issuer_url = it.second.m_url;
+            issuers.push_back(issuer_info);
+        }
+        return issuers;
+
+    }
+
+    virtual bool Validate(const char *token, std::string &emsg)
+    {
+        // Just check if the token is valid, no scope checking
+
+        // Deserialize the token
+        SciToken scitoken;
+        char *err_msg;
+        pthread_rwlock_rdlock(&m_config_lock);
+        auto retval = scitoken_deserialize(token, &scitoken, &m_valid_issuers_array[0], &err_msg);
+        pthread_rwlock_unlock(&m_config_lock);
+        if (retval) {
+            // This originally looked like a JWT so log the failure.
+            m_log.Emsg("Validate", "Failed to deserialize SciToken:", err_msg);
+            emsg = err_msg;
+            free(err_msg);
+            return false;
+        }
+
+        // Delete the scitokens
+        scitoken_destroy(scitoken);
+
+        // Deserialize checks the key, so we're good now.
+        return true;
+    }
+
     virtual int Audit(const int              accok,
                       const XrdSecEntity    *Entity,
                       const char            *path,
@@ -299,6 +347,24 @@ public:
                              const Access_Operation oper) override
     {
         return 0;
+    }
+
+    std::string GetConfigFile() {
+        return m_cfg_file;
+    }
+
+    static XrdSciTokensHelper* InitViaZTN(XrdSysLogger *lp,
+                                             const char   *cfn,
+                                             const char   *parm,
+                                             XrdAccAuthorize *accP)
+    {
+        try {
+            std::unique_ptr<XrdAccAuthorize> chain(accP);
+            accSciTokens = new XrdAccSciTokens(lp, parm, std::move(chain)); // The last arg not needed!
+            return (XrdSciTokensHelper*)accSciTokens;
+        } catch (std::exception &) {
+            return nullptr;
+        }
     }
 
 private:
@@ -476,7 +542,7 @@ private:
     bool Reconfig()
     {
         errno = 0;
-        std::string cfg_file("/etc/xrootd/scitokens.cfg");
+        m_cfg_file = "/etc/xrootd/scitokens.cfg";
         if (!m_parms.empty()) {
             size_t pos = 0;
             std::vector<std::string> arg_list;
@@ -495,20 +561,20 @@ private:
                     m_log.Emsg("Reconfig", "Ignoring unknown configuration argument:", arg.c_str());
                     continue;
                 }
-                cfg_file = std::string(arg.c_str() + 7);
+                m_cfg_file = std::string(arg.c_str() + 7);
             }
         }
-        m_log.Emsg("Reconfig", "Parsing configuration file:", cfg_file.c_str());
+        m_log.Emsg("Reconfig", "Parsing configuration file:", m_cfg_file.c_str());
 
-        INIReader reader(cfg_file);
+        INIReader reader(m_cfg_file);
         if (reader.ParseError() < 0) {
             std::stringstream ss;
-            ss << "Error opening config file (" << cfg_file << "): " << strerror(errno);
+            ss << "Error opening config file (" << m_cfg_file << "): " << strerror(errno);
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         } else if (reader.ParseError()) {
             std::stringstream ss;
-            ss << "Parse error on line " << reader.ParseError() << " of file " << cfg_file;
+            ss << "Parse error on line " << reader.ParseError() << " of file " << m_cfg_file;
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         }
@@ -608,6 +674,7 @@ private:
                             std::forward_as_tuple(name, issuer, base_paths, restricted_paths,
                                                   map_subject, default_user));
         }
+
         if (issuers.empty()) {
             m_log.Emsg("Reconfig", "No issuers configured.");
             return false;
@@ -666,22 +733,48 @@ private:
     uint64_t m_next_clean{0};
     XrdSysError m_log;
     AuthzBehavior m_authz_behavior{AuthzBehavior::PASSTHROUGH};
+    std::string m_cfg_file;
 
     static constexpr uint64_t m_expiry_secs = 60;
 };
 
+std::string      cfgSciTokens;
+
 extern "C" {
 
-XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
-                                       const char   *cfn,
-                                       const char   *parm)
+XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
+                                          const char   *cfn,
+                                          const char   *parm,
+                                       XrdAccAuthorize *accP)
 {
-    std::unique_ptr<XrdAccAuthorize> def_authz(XrdAccDefaultAuthorizeObject(lp, cfn, parm, compiledVer));
-    try {
-        return new XrdAccSciTokens(lp, parm, std::move(def_authz));
-    } catch (std::exception &) {
-        return nullptr;
+    // Record the parent authorization plugin. There is no need to use
+    // unique_ptr as all of this happens once in the main and only thread.
+    //
+
+    // Create a logging platform to send error messages
+    XrdSysError xrootdLog(lp, "scitokens_");
+    // If we have been initialized by via InitViaZTN() then all we need to check
+    // is that the config file passed here is the same one passed via the ZTN.
+    // If it isn't, issue a nasty message and return a nil pointer.
+    //
+    if (accSciTokens)  // Already initialzed?
+    {
+        // Verify sameness of config file
+        if (accSciTokens->GetConfigFile() == cfn) {
+            return accSciTokens;
+        } else {
+            xrootdLog.Emsg("XrdAccAuthorizeObjectAdd", "SciTokens configuration is different now from the scitokens configuration when initialized");
+            return nullptr;
+        }
     }
+
+    // First time through, get a new SciTokens authorizer. We simply reuse the
+    // InitViaZTN() method as that is all we need.
+    //
+    accSciTokens = (XrdAccSciTokens*)XrdAccSciTokens::InitViaZTN(lp, cfn, parm, accP);
+    return (accSciTokens ? accSciTokens : nullptr);
 }
+
+
 
 }
