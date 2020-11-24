@@ -23,6 +23,7 @@
 
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
+XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
 extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      const char     *cfn,
                                                      const char     *parm,
@@ -1003,6 +1004,12 @@ XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
     return (accSciTokens ? accSciTokens : nullptr);
 }
 
+XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
+                                       const char   *cfn,
+                                       const char   *parm)
+{
+    return XrdAccAuthorizeObjectAdd(lp, cfn, parm, 0);
+}
 
 
 }
