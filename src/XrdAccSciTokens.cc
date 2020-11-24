@@ -23,7 +23,6 @@
 
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
-static XrdVERSIONINFODEF(compiledVer, XrdAccTest, XrdVNUMBER, XrdVERSION);
 extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      const char     *cfn,
                                                      const char     *parm,
