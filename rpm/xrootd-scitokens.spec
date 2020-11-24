@@ -1,5 +1,5 @@
 Name: xrootd-scitokens
-Version: 1.2.2
+Version: 1.3.0
 Release: 1%{?dist}
 Summary: SciTokens authentication plugin for XRootD
 License: Apache 2.0
@@ -59,6 +59,9 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root,-)
 
 %changelog
+* Sat Sep 19 2020 Brian Bockelman <brian.bockelman@cern.ch> - 1.3.0-1
+- Allow administrator to provide mapfiles for establishing the username.
+
 * Wed Aug 06 2020 Derek Weitzel <dweitzel@cse.unl.edu> - 1.2.2-1
 - Fix behavior difference between el7 and el8 #30
 - Set allowed_issuers in the JWT deserialize #31
