@@ -33,7 +33,7 @@ SET( CMAKE_MODULE_LINKER_FLAGS "-Wl,--no-undefined")
 
 include_directories(${SCITOKENS_CPP_INCLUDE_DIR} ${XROOTD_INCLUDES} vendor/picojson vendor/inih)
 
-add_library(XrdAccSciTokens SHARED src/scitokens.cpp)
+add_library(XrdAccSciTokens SHARED src/XrdAccSciTokens.cc src/XrdSciTokensHelper.hh)
 target_link_libraries(XrdAccSciTokens -ldl -lpthread ${SCITOKENS_CPP_LIBRARIES} ${XROOTD_UTILS_LIB} ${XROOTD_SERVER_LIB})
 set_target_properties(XrdAccSciTokens PROPERTIES OUTPUT_NAME XrdAccSciTokens-${XROOTD_PLUGIN_VERSION} SUFFIX ".so" LINK_FLAGS "-Wl,--version-script=${PROJECT_SOURCE_DIR}/configs/export-lib-symbols")
 

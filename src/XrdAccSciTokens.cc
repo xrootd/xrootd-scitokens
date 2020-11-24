@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <fstream>
 #include <unordered_map>
 #include <tuple>
 
@@ -18,12 +19,10 @@
 #include "picojson.h"
 
 #include "scitokens/scitokens.h"
-
-XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
+#include "XrdSciTokensHelper.hh"
 
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
-static XrdVERSIONINFODEF(compiledVer, XrdAccTest, XrdVNUMBER, XrdVERSION);
 extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
                                                      const char     *cfn,
                                                      const char     *parm,
@@ -139,6 +138,48 @@ void ParseCanonicalPaths(const std::string &path, std::vector<std::string> &resu
     } while (pos != std::string::npos);
 }
 
+struct MapRule
+{
+    MapRule(const std::string &sub,
+            const std::string &path_prefix,
+            const std::string &group,
+            const std::string &name)
+        : m_sub(sub),
+          m_path_prefix(path_prefix),
+          m_group(group),
+          m_name(name)
+    {
+        //std::cerr << "Making a rule {sub=" << sub << ", path=" << path_prefix << ", group=" << group << ", result=" << name << "}" << std::endl;
+    }
+
+    const std::string match(const std::string sub,
+                              const std::string req_path,
+                              const std::vector<std::string> groups) const
+    {
+        if (!m_sub.empty() && sub != m_sub) {return "";}
+
+        if (!m_path_prefix.empty() &&
+            strncmp(req_path.c_str(), m_path_prefix.c_str(), m_path_prefix.size()))
+        {
+            return "";
+        }
+
+        if (!m_group.empty()) {
+            for (const auto &group : groups) {
+                if (group == m_group)
+                    return m_name;
+            }
+            return "";
+        }
+        return m_name;
+    }
+
+    std::string m_sub;
+    std::string m_path_prefix;
+    std::string m_group;
+    std::string m_name;
+};
+
 struct IssuerConfig
 {
     IssuerConfig(const std::string &issuer_name,
@@ -146,13 +187,15 @@ struct IssuerConfig
                  const std::vector<std::string> &base_paths,
                  const std::vector<std::string> &restricted_paths,
                  bool map_subject,
-                 const std::string &default_user)
+                 const std::string &default_user,
+                 const std::vector<MapRule> rules)
         : m_map_subject(map_subject),
           m_name(issuer_name),
           m_url(issuer_url),
           m_default_user(default_user),
           m_base_paths(base_paths),
-          m_restricted_paths(restricted_paths)
+          m_restricted_paths(restricted_paths),
+          m_map_rules(rules)
     {}
 
     const bool m_map_subject;
@@ -161,6 +204,7 @@ struct IssuerConfig
     const std::string m_default_user;
     const std::vector<std::string> m_base_paths;
     const std::vector<std::string> m_restricted_paths;
+    const std::vector<MapRule> m_map_rules;
 };
 
 }
@@ -169,10 +213,14 @@ struct IssuerConfig
 class XrdAccRules
 {
 public:
-    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &issuer) :
+    XrdAccRules(uint64_t expiry_time, const std::string &username, const std::string &token_username,
+        const std::string &issuer, const std::vector<MapRule> &rules, const std::vector<std::string> &groups) :
         m_expiry_time(expiry_time),
         m_username(username),
-        m_issuer(issuer)
+        m_token_username(token_username),
+        m_issuer(issuer),
+        m_map_rules(rules),
+        m_groups(groups)
     {}
 
     ~XrdAccRules() {}
@@ -195,18 +243,38 @@ public:
         }
     }
 
-    const std::string & get_username() const {return m_username;}
+    std::string get_username(const std::string &req_path)
+    {
+        for (const auto &rule : m_map_rules) {
+            std::string name = rule.match(m_token_username, req_path, m_groups);
+            if (!name.empty()) {
+                return name;
+            }
+        }
+        return "";
+    }
+
+    const std::string & get_default_username() const {return m_username;}
     const std::string & get_issuer() const {return m_issuer;}
+
+    size_t size() const {return m_rules.size();}
+    const std::vector<std::string> &groups() const {return m_groups;}
 
 private:
     AccessRulesRaw m_rules;
     uint64_t m_expiry_time{0};
     const std::string m_username;
+    const std::string m_token_username;
     const std::string m_issuer;
+    const std::vector<MapRule> m_map_rules;
+    const std::vector<std::string> m_groups;
 };
 
+class XrdAccSciTokens;
 
-class XrdAccSciTokens : public XrdAccAuthorize
+XrdAccSciTokens *accSciTokens = nullptr;
+
+class XrdAccSciTokens : public XrdAccAuthorize, public XrdSciTokensHelper
 {
 
     enum class AuthzBehavior {
@@ -260,9 +328,12 @@ public:
 		uint64_t cache_expiry;
 		AccessRulesRaw rules;
                 std::string username;
+                std::string token_username;
                 std::string issuer;
-                if (GenerateAcls(authz, cache_expiry, rules, username, issuer)) {
-                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, issuer));
+                std::vector<MapRule> map_rules;
+                std::vector<std::string> groups;
+                if (GenerateAcls(authz, cache_expiry, rules, username, token_username, issuer, map_rules, groups)) {
+                    access_rules.reset(new XrdAccRules(now + cache_expiry, username, token_username, issuer, map_rules, groups));
                     access_rules->parse(rules);
                 } else {
                     return OnMissing(Entity, path, oper, env);
@@ -274,16 +345,108 @@ public:
             std::lock_guard<std::mutex> guard(m_mutex);
             m_map[authz] = access_rules;
         }
-        const std::string &username = access_rules->get_username();
-        if (!username.empty() && !Entity->name) {
-            const_cast<XrdSecEntity*>(Entity)->name = strdup(username.c_str());
-        }
+
+        // Strategy: we populate the name in the XrdSecEntity if:
+        //    1. There are scopes present in the token that authorize the request,
+        //    2. The token is mapped by some rule in the mapfile (group or subject-based mapping).
+        // The default username for the issuer is only used in (1).
+        // If the scope-based mapping is successful, authorize immediately.  Otherwise, if the
+        // mapping is successful, we potentially chain to another plugin.
+        //
+        // We always populate the issuer and the groups, if present.
+
+        // Access may be authorized; populate XrdSecEntity
+        auto mutable_entity = const_cast<XrdSecEntity*>(Entity);
+        free(mutable_entity->vorg); mutable_entity->vorg = nullptr;
+        free(mutable_entity->grps); mutable_entity->grps = nullptr;
+        free(mutable_entity->role); mutable_entity->role = nullptr;
         const auto &issuer = access_rules->get_issuer();
-        if (!issuer.empty() && !Entity->vorg) {
-            const_cast<XrdSecEntity*>(Entity)->vorg = strdup(issuer.c_str());
+        if (!issuer.empty()) {
+            mutable_entity->vorg = strdup(issuer.c_str());
         }
-        auto result = access_rules->apply(oper, path);
-        return result ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
+        if (access_rules->groups().size()) {
+            std::stringstream ss;
+            for (const auto &grp : access_rules->groups()) {
+                ss << grp << " ";
+            }
+            const auto &groups_str = ss.str();
+            mutable_entity->grps = static_cast<char*>(malloc(groups_str.size()));
+            if (mutable_entity->grps) {
+                memcpy(mutable_entity->grps, groups_str.c_str(), groups_str.size());
+                mutable_entity->grps[groups_str.size()] = '\0';
+            }
+        }
+
+        std::string username;
+        bool mapping_success = false;
+        bool scope_success = false;
+        username = access_rules->get_username(path);
+
+        mapping_success = !username.empty();
+        scope_success = access_rules->apply(oper, path);
+
+        if (!scope_success && !mapping_success) {
+            return  OnMissing(Entity, path, oper, env);
+        }
+
+        // Default user only applies to scope-based mappings.
+        if (!mapping_success && scope_success) {
+            mapping_success = !(username = access_rules->get_default_username()).empty();
+        }
+
+        if (mapping_success) {
+            free(mutable_entity->name);
+            mutable_entity->name = strdup(username.c_str());
+        }
+
+        // When the scope authorized this access, allow immediately.  Otherwise, chain
+        return scope_success ? AddPriv(oper, XrdAccPriv_None) : OnMissing(Entity, path, oper, env);
+    }
+
+    virtual  Issuers IssuerList() override
+    {
+        /*
+        Convert the m_issuers into the data structure:
+        struct   ValidIssuer
+        {std::string issuer_name;
+         std::string issuer_url;
+        };
+        typedef std::vector<ValidIssuer> Issuers;
+        */
+        Issuers issuers;
+        for (auto it: m_issuers) {
+            ValidIssuer issuer_info;
+            issuer_info.issuer_name = it.first;
+            issuer_info.issuer_url = it.second.m_url;
+            issuers.push_back(issuer_info);
+        }
+        return issuers;
+
+    }
+
+    virtual bool Validate(const char *token, std::string &emsg)
+    {
+        // Just check if the token is valid, no scope checking
+
+        // Deserialize the token
+        SciToken scitoken;
+        char *err_msg;
+        pthread_rwlock_rdlock(&m_config_lock);
+        auto retval = scitoken_deserialize(token, &scitoken, &m_valid_issuers_array[0], &err_msg);
+        pthread_rwlock_unlock(&m_config_lock);
+        if (retval) {
+            // This originally looked like a JWT so log the failure.
+            m_log.Emsg("Validate", "Failed to deserialize SciToken:", err_msg);
+            emsg = err_msg;
+            free(err_msg);
+            return false;
+        }
+
+        // Delete the scitokens
+        scitoken_destroy(scitoken);
+
+        // Deserialize checks the key, so we're good now.
+        return true;
     }
 
     virtual int Audit(const int              accok,
@@ -299,6 +462,24 @@ public:
                              const Access_Operation oper) override
     {
         return 0;
+    }
+
+    std::string GetConfigFile() {
+        return m_cfg_file;
+    }
+
+    static XrdSciTokensHelper* InitViaZTN(XrdSysLogger *lp,
+                                             const char   *cfn,
+                                             const char   *parm,
+                                             XrdAccAuthorize *accP)
+    {
+        try {
+            std::unique_ptr<XrdAccAuthorize> chain(accP);
+            accSciTokens = new XrdAccSciTokens(lp, parm, std::move(chain)); // The last arg not needed!
+            return (XrdSciTokensHelper*)accSciTokens;
+        } catch (std::exception &) {
+            return nullptr;
+        }
     }
 
 private:
@@ -317,7 +498,7 @@ private:
         return XrdAccPriv_None;
     }
 
-    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &issuer) {
+    bool GenerateAcls(const std::string &authz, uint64_t &cache_expiry, AccessRulesRaw &rules, std::string &username, std::string &token_username, std::string &issuer, std::vector<MapRule> &map_rules, std::vector<std::string> &groups) {
         if (strncmp(authz.c_str(), "Bearer%20", 9)) {
             return false;
         }
@@ -403,6 +584,20 @@ private:
         }
         enforcer_destroy(enf);
 
+        char **group_list;
+        std::vector<std::string> groups_parsed;
+        if (!scitoken_get_claim_string_list(token, "wlcg.groups", &group_list, &err_msg)) {
+            for (int idx=0; group_list[idx]; idx++) {
+                groups_parsed.emplace_back(group_list[idx]);
+            }
+            scitoken_free_string_list(group_list);
+        } else {
+            // For now, we silently ignore errors.
+            // std::cerr << "Failed to get groups: " << err_msg << std::endl;
+            free(err_msg);
+        }
+
+
         pthread_rwlock_rdlock(&m_config_lock);
         auto iter = m_issuers.find(token_issuer);
         if (iter == m_issuers.end()) {
@@ -412,20 +607,29 @@ private:
             return false;
         }
         const auto &config = iter->second;
-        std::string token_username;
+        value = nullptr;
+        if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
+            pthread_rwlock_unlock(&m_config_lock);
+            m_log.Emsg("GenerateAcls", "Failed to get token subject:", err_msg);
+            free(err_msg);
+            scitoken_destroy(token);
+            return false;
+        }
+        token_username = std::string(value);
+        free(value);
+
         if (config.m_map_subject) {
-            value = nullptr;
-            if (scitoken_get_claim_string(token, "sub", &value, &err_msg)) {
-                pthread_rwlock_unlock(&m_config_lock);
-                m_log.Emsg("GenerateAcls", "Failed to get token subject:", err_msg);
-                free(err_msg);
-                scitoken_destroy(token);
-                return false;
-            }
-            token_username = std::string(value);
-            free(value);
+            username = token_username;
         } else {
-            token_username = config.m_default_user;
+            username = config.m_default_user;
+        }
+
+        for (auto rule : config.m_map_rules) {
+            for (auto path : config.m_base_paths) {
+                auto path_rule = rule;
+                path_rule.m_path_prefix = path + rule.m_path_prefix;
+                map_rules.emplace_back(path_rule);
+            }
         }
 
         AccessRulesRaw xrd_rules;
@@ -467,8 +671,87 @@ private:
 
         cache_expiry = expiry;
         rules = std::move(xrd_rules);
-        username = std::move(token_username);
+        username = std::move(username);
         issuer = std::move(token_issuer);
+        groups = std::move(groups_parsed);
+
+        return true;
+    }
+
+    bool ParseMapfile(const std::string &filename, std::vector<MapRule> &rules)
+    {
+        std::stringstream ss;
+        std::ifstream mapfile(filename);
+        if (!mapfile.is_open())
+        {
+            ss << "Error opening mapfile (" << filename << "): " << strerror(errno);
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        picojson::value val;
+        auto err = picojson::parse(val, mapfile);
+        if (!err.empty()) {
+            ss << "Unable to parse mapfile (" << filename << ") as json: " << err;
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        if (!val.is<picojson::array>()) {
+            ss << "Top-level element of the mapfile " << filename << " must be a list";
+            m_log.Emsg("ParseMapfile", ss.str().c_str());
+            return false;
+        }
+        const auto& rule_list = val.get<picojson::array>();
+        for (const auto &rule : rule_list)
+        {
+            if (!rule.is<picojson::object>()) {
+                ss << "Mapfile " << filename << " must be a list of JSON objects; found non-object";
+                m_log.Emsg("ParseMapfile", ss.str().c_str());
+                return false;
+            }
+            std::string path;
+            std::string group;
+            std::string sub;
+            std::string result;
+            bool ignore = false;
+            for (const auto &entry : rule.get<picojson::object>()) {
+                if (!entry.second.is<std::string>()) {
+                    if (entry.first != "result" && entry.first != "group" && entry.first != "sub" && entry.first != "path") {continue;}
+                    ss << "In mapfile " << filename << ", rule entry for " << entry.first << " has non-string value";
+                    m_log.Emsg("ParseMapfile", ss.str().c_str());
+                    return false;
+                }
+                if (entry.first == "result") {
+                    result = entry.second.get<std::string>();
+                }
+                else if (entry.first == "group") {
+                    group = entry.second.get<std::string>();
+                }
+                else if (entry.first == "sub") {
+                    sub = entry.second.get<std::string>();
+                }
+                else if (entry.first == "path") {
+                    std::string norm_path;
+                    if (!MakeCanonical(entry.second.get<std::string>(), norm_path)) {
+                        ss << "In mapfile " << filename << " encountered a path " << entry.second.get<std::string>()
+                           << " that cannot be normalized";
+                        m_log.Emsg("ParseMapfile", ss.str().c_str());
+                        return false;
+                    }
+                    path = norm_path;
+                } else if (entry.first == "ignore") {
+                    ignore = true;
+                    break;
+                }
+            }
+            if (ignore) continue;
+            if (result.empty())
+            {
+                ss << "In mapfile " << filename << " encountered a rule without a 'result' attribute";
+                m_log.Emsg("ParseMapfile", ss.str().c_str());
+                return false;
+            }
+            rules.emplace_back(sub, path, group, result);
+        }
 
         return true;
     }
@@ -476,7 +759,7 @@ private:
     bool Reconfig()
     {
         errno = 0;
-        std::string cfg_file("/etc/xrootd/scitokens.cfg");
+        m_cfg_file = "/etc/xrootd/scitokens.cfg";
         if (!m_parms.empty()) {
             size_t pos = 0;
             std::vector<std::string> arg_list;
@@ -495,20 +778,20 @@ private:
                     m_log.Emsg("Reconfig", "Ignoring unknown configuration argument:", arg.c_str());
                     continue;
                 }
-                cfg_file = std::string(arg.c_str() + 7);
+                m_cfg_file = std::string(arg.c_str() + 7);
             }
         }
-        m_log.Emsg("Reconfig", "Parsing configuration file:", cfg_file.c_str());
+        m_log.Emsg("Reconfig", "Parsing configuration file:", m_cfg_file.c_str());
 
-        INIReader reader(cfg_file);
+        INIReader reader(m_cfg_file);
         if (reader.ParseError() < 0) {
             std::stringstream ss;
-            ss << "Error opening config file (" << cfg_file << "): " << strerror(errno);
+            ss << "Error opening config file (" << m_cfg_file << "): " << strerror(errno);
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         } else if (reader.ParseError()) {
             std::stringstream ss;
-            ss << "Parse error on line " << reader.ParseError() << " of file " << cfg_file;
+            ss << "Parse error on line " << reader.ParseError() << " of file " << m_cfg_file;
             m_log.Emsg("Reconfig", ss.str().c_str());
             return false;
         }
@@ -575,6 +858,17 @@ private:
                 continue;
             }
 
+            std::vector<MapRule> rules;
+            auto name_mapfile = reader.Get(section, "name_mapfile", "");
+            if (!name_mapfile.empty()) {
+                if (!ParseMapfile(name_mapfile, rules)) {
+                    m_log.Emsg("Reconfig", "Failed to parse mapfile; failing (re-)configuration", name_mapfile.c_str());
+                    return false;
+                } else {
+                    m_log.Emsg("Reconfig", "Successfully parsed SciTokens mapfile:", name_mapfile.c_str());
+                }
+            }
+
             auto base_path = reader.Get(section, "base_path", "");
             if (base_path.empty()) {
                 m_log.Emsg("Reconfig", "Ignoring section because 'base_path' attribute is not set:",
@@ -606,8 +900,9 @@ private:
             issuers.emplace(std::piecewise_construct,
                             std::forward_as_tuple(issuer),
                             std::forward_as_tuple(name, issuer, base_paths, restricted_paths,
-                                                  map_subject, default_user));
+                                                  map_subject, default_user, rules));
         }
+
         if (issuers.empty()) {
             m_log.Emsg("Reconfig", "No issuers configured.");
             return false;
@@ -666,22 +961,48 @@ private:
     uint64_t m_next_clean{0};
     XrdSysError m_log;
     AuthzBehavior m_authz_behavior{AuthzBehavior::PASSTHROUGH};
+    std::string m_cfg_file;
 
     static constexpr uint64_t m_expiry_secs = 60;
 };
 
+std::string      cfgSciTokens;
+
 extern "C" {
 
-XrdAccAuthorize *XrdAccAuthorizeObject(XrdSysLogger *lp,
-                                       const char   *cfn,
-                                       const char   *parm)
+XrdAccAuthorize *XrdAccAuthorizeObjectAdd(XrdSysLogger *lp,
+                                          const char   *cfn,
+                                          const char   *parm,
+                                       XrdAccAuthorize *accP)
 {
-    std::unique_ptr<XrdAccAuthorize> def_authz(XrdAccDefaultAuthorizeObject(lp, cfn, parm, compiledVer));
-    try {
-        return new XrdAccSciTokens(lp, parm, std::move(def_authz));
-    } catch (std::exception &) {
-        return nullptr;
+    // Record the parent authorization plugin. There is no need to use
+    // unique_ptr as all of this happens once in the main and only thread.
+    //
+
+    // Create a logging platform to send error messages
+    XrdSysError xrootdLog(lp, "scitokens_");
+    // If we have been initialized by via InitViaZTN() then all we need to check
+    // is that the config file passed here is the same one passed via the ZTN.
+    // If it isn't, issue a nasty message and return a nil pointer.
+    //
+    if (accSciTokens)  // Already initialzed?
+    {
+        // Verify sameness of config file
+        if (accSciTokens->GetConfigFile() == cfn) {
+            return accSciTokens;
+        } else {
+            xrootdLog.Emsg("XrdAccAuthorizeObjectAdd", "SciTokens configuration is different now from the scitokens configuration when initialized");
+            return nullptr;
+        }
     }
+
+    // First time through, get a new SciTokens authorizer. We simply reuse the
+    // InitViaZTN() method as that is all we need.
+    //
+    accSciTokens = (XrdAccSciTokens*)XrdAccSciTokens::InitViaZTN(lp, cfn, parm, accP);
+    return (accSciTokens ? accSciTokens : nullptr);
 }
+
+
 
 }
