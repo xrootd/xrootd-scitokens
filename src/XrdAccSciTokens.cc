@@ -24,11 +24,6 @@
 // The status-quo to retrieve the default object is to copy/paste the
 // linker definition and invoke directly.
 XrdVERSIONINFO(XrdAccAuthorizeObject, XrdAccSciTokens);
-extern XrdAccAuthorize *XrdAccDefaultAuthorizeObject(XrdSysLogger   *lp,
-                                                     const char     *cfn,
-                                                     const char     *parm,
-                                                     XrdVersionInfo &myVer);
-
 
 namespace {
 
